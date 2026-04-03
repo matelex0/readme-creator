@@ -16,19 +16,70 @@ class ReadmeGenerator {
     }
 
     public function findRepoUrl($owner, $repo) {
+        $apiRepoUrl = $this->findRepoWithGitHubApi($owner, $repo);
+        if ($apiRepoUrl) {
+            return $apiRepoUrl;
+        }
+
         $path = $owner . '/' . $repo;
-        
+
         foreach ($this->config['providers'] as $providerTemplate) {
             $url = sprintf($providerTemplate, $path);
-            
+
             $cmd = sprintf('git ls-remote %s HEAD', escapeshellarg($url));
             exec($cmd, $output, $returnVar);
-            
+
             if ($returnVar === 0) {
                 return $url;
             }
         }
-        
+
+        return null;
+    }
+
+    private function findRepoWithGitHubApi($owner, $repo) {
+        $apiUrl = sprintf(
+            'https://api.github.com/repos/%s/%s',
+            rawurlencode($owner),
+            rawurlencode($repo)
+        );
+
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => "User-Agent: README-Creator\r\nAccept: application/vnd.github+json\r\n",
+                'timeout' => 8,
+                'ignore_errors' => true,
+            ],
+        ]);
+
+        $response = @file_get_contents($apiUrl, false, $context);
+        if ($response === false) {
+            return null;
+        }
+
+        if (!isset($http_response_header) || !is_array($http_response_header)) {
+            return null;
+        }
+
+        $statusLine = $http_response_header[0] ?? '';
+        if (strpos($statusLine, '200') === false) {
+            return null;
+        }
+
+        $json = json_decode($response, true);
+        if (!is_array($json)) {
+            return null;
+        }
+
+        if (!empty($json['clone_url'])) {
+            return $json['clone_url'];
+        }
+
+        if (!empty($json['html_url'])) {
+            return rtrim($json['html_url'], '/') . '.git';
+        }
+
         return null;
     }
 
@@ -39,7 +90,7 @@ class ReadmeGenerator {
 
         $folderName = uniqid('repo_');
         $targetPath = $this->config['temp_dir'] . '/' . $folderName;
-        
+
         $this->tempPath = $targetPath;
 
         $cmd = sprintf('git clone --depth=1 %s %s 2>&1', escapeshellarg($url), escapeshellarg($targetPath));
@@ -54,7 +105,7 @@ class ReadmeGenerator {
 
     public function analyze($path) {
         $data = [
-            'languages' => [], 
+            'languages' => [],
             'frameworks' => [],
             'structure' => [],
             'has_tests' => false,
@@ -73,7 +124,7 @@ class ReadmeGenerator {
         );
 
         $fileCount = 0;
-        $maxFiles = 2000; 
+        $maxFiles = 2000;
 
         $extMap = [
             'php' => 'PHP',
@@ -103,7 +154,7 @@ class ReadmeGenerator {
             $filename = $file->getFilename();
             $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
             $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
-            
+
             $firstDir = explode(DIRECTORY_SEPARATOR, $relativePath)[0];
             if (in_array($firstDir, $this->config['ignore_dirs'])) continue;
             if (strpos($relativePath, '.git') === 0) continue;
@@ -189,7 +240,7 @@ class ReadmeGenerator {
             if ($filename === '.babelrc' || $filename === 'babel.config.js') $data['frameworks']['Babel'] = true;
             if ($filename === 'pubspec.yaml') {
                  $data['frameworks']['Flutter'] = true;
-                 $data['languages']['Dart'] = ($data['languages']['Dart'] ?? 0) + 1; 
+                 $data['languages']['Dart'] = ($data['languages']['Dart'] ?? 0) + 1;
             }
             if ($filename === 'AndroidManifest.xml') $data['frameworks']['Android'] = true;
             if ($filename === 'Podfile') $data['frameworks']['iOS'] = true;
@@ -202,7 +253,7 @@ class ReadmeGenerator {
         }
 
         sort($data['structure']);
-        
+
         unset($data['languages']['Markdown']);
         unset($data['languages']['Pip']);
         unset($data['frameworks']['Pip']);
@@ -217,7 +268,7 @@ class ReadmeGenerator {
         $tree = "";
         $maxLines = 25;
         $lines = 0;
-        
+
         $structure = [];
         foreach ($paths as $path) {
             $parts = explode(DIRECTORY_SEPARATOR, $path);
@@ -232,10 +283,10 @@ class ReadmeGenerator {
 
         $render = function($node, $prefix = '') use (&$tree, &$lines, &$maxLines, &$render) {
             if ($lines >= $maxLines) return;
-            
+
             $keys = array_keys($node);
             $lastIndex = count($keys) - 1;
-            
+
             foreach ($keys as $index => $key) {
                 if ($lines >= $maxLines) {
                     $tree .= $prefix . "...\n";
@@ -270,7 +321,7 @@ class ReadmeGenerator {
 
     private function getTechBadge($tech, $percentage = null) {
         $techLower = strtolower($tech);
-        
+
         $map = [
             'php' => ['color' => '777BB4', 'logo' => 'php'],
             'laravel' => ['color' => 'FF2D20', 'logo' => 'laravel'],
@@ -318,26 +369,26 @@ class ReadmeGenerator {
             $color = $map[$techLower]['color'];
             $logo = $map[$techLower]['logo'];
         }
-        
+
         $label = $tech;
         if ($percentage !== null) {
             $label .= " " . $percentage . "%";
         }
-        
+
         $labelEncoded = rawurlencode($label);
-        
+
         return sprintf(
-            '![%s](https://img.shields.io/badge/%s-%s?style=for-the-badge&logo=%s&logoColor=white)', 
-            $tech, 
-            $labelEncoded, 
-            $color, 
+            '![%s](https://img.shields.io/badge/%s-%s?style=for-the-badge&logo=%s&logoColor=white)',
+            $tech,
+            $labelEncoded,
+            $color,
             $logo
         );
     }
 
     private function generateFeatures($data) {
         $features = [];
-        
+
         // Infrastructure & Tools
         if (!empty($data['has_docker'])) $features[] = "Containerized deployment with Docker for consistent environments";
         if (!empty($data['has_tests'])) $features[] = "Comprehensive test suite setup for reliability";
@@ -398,7 +449,7 @@ class ReadmeGenerator {
              $features[] = "Easy to customize and extend";
              $features[] = "Well-documented codebase";
         }
-        
+
         if (count($features) < 3) {
             $generics = [
                 "Cross-platform compatibility",
@@ -430,7 +481,7 @@ class ReadmeGenerator {
         $md .= "</div>\n\n";
 
         $md .= "<div align=\"center\">\n\n";
-        
+
         if ($data['license'] && $data['license'] !== 'Not specified' && $data['license'] !== 'See LICENSE file') {
              $licenseEncoded = rawurlencode($data['license']);
              $md .= "![License](https://img.shields.io/badge/license-" . $licenseEncoded . "-blue.svg?style=flat-square) ";
@@ -442,17 +493,17 @@ class ReadmeGenerator {
         $md .= "![Repo Size](https://img.shields.io/github/repo-size/" . $owner . "/" . $repo . "?style=flat-square) ";
         $md .= "![Issues](https://img.shields.io/github/issues/" . $owner . "/" . $repo . "?style=flat-square) ";
         $md .= "![Stars](https://img.shields.io/github/stars/" . $owner . "/" . $repo . "?style=flat-square) ";
-        
+
         if ($description) {
             $md .= "\n\n" . $description . "\n\n";
         } else {
             $md .= "\n\n";
         }
-        
+
         $md .= "<p align=\"center\">\n";
         $md .= "  *Developed with the software and tools below.*\n";
         $md .= "</p>\n";
-        
+
         $md .= "<p align=\"center\">\n";
         $md .= "  [![contributors](https://img.shields.io/github/contributors/" . $owner . "/" . $repo . "?style=flat-square)](https://github.com/" . $owner . "/" . $repo . "/graphs/contributors)\n";
         $md .= "  [![forks](https://img.shields.io/github/forks/" . $owner . "/" . $repo . "?style=flat-square)](https://github.com/" . $owner . "/" . $repo . "/network/members)\n";
@@ -460,7 +511,7 @@ class ReadmeGenerator {
         $md .= "</p>\n";
 
         $md .= "</div>\n\n";
-        
+
         $md .= "---\n\n";
 
         $md .= "## Table of Contents\n\n";
@@ -473,7 +524,7 @@ class ReadmeGenerator {
         $md .= "- [License](#license)\n\n";
 
         $md .= "## Languages\n\n";
-            
+
             $totalBytes = array_sum($data['languages']);
             if ($totalBytes > 0) {
                 foreach ($data['languages'] as $lang => $bytes) {
@@ -487,7 +538,7 @@ class ReadmeGenerator {
 
             $allTech = array_keys($data['frameworks']);
             $allTech = array_unique($allTech);
-            
+
             if (!empty($allTech)) {
                 $md .= "## Tech Stack\n\n";
                 foreach ($allTech as $tech) {
@@ -534,7 +585,7 @@ class ReadmeGenerator {
         if (isset($data['has_docker']) && $data['has_docker']) {
             $md .= $step++ . ". Start with Docker:\n```bash\ndocker-compose up -d\n```\n\n";
         }
-        
+
         $md .= "### Running the App\n\n";
         if (isset($data['frameworks']['Node.js'])) {
              $md .= "```bash\nnpm start\n# or\nnpm run dev\n```\n\n";
@@ -601,40 +652,40 @@ class ReadmeGenerator {
         }, $markdown);
 
         $html = htmlspecialchars($markdown);
-        
+
         $html = str_replace(
-            ['###DIVSTART###', '###DIVEND###', '###PSTART###', '###PEND###'], 
-            ['<div align="center">', '</div>', '<p align="center">', '</p>'], 
+            ['###DIVSTART###', '###DIVEND###', '###PSTART###', '###PEND###'],
+            ['<div align="center">', '</div>', '<p align="center">', '</p>'],
             $html
         );
         foreach ($imgTags as $id => $tag) {
             $html = str_replace($id, $tag, $html);
         }
-        
+
         $html = preg_replace('/!\[([^\]]*)\]\(([^)]+)\)/', '<img src="$2" alt="$1" style="max-width:100%;">', $html);
-        
+
         $html = preg_replace('/\[([^\]]+)\]\(([^)]+)\)/', '<a href="$2" target="_blank">$1</a>', $html);
-        
+
         $html = preg_replace('/^# (.*?)$/m', '<h1>$1</h1>', $html);
         $html = preg_replace('/^## (.*?)$/m', '<h2>$1</h2>', $html);
         $html = preg_replace('/^### (.*?)$/m', '<h3>$1</h3>', $html);
         $html = preg_replace('/^#### (.*?)$/m', '<h4>$1</h4>', $html);
-        
+
         $html = preg_replace('/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $html);
         $html = preg_replace('/\*([^*]+)\*/', '<em>$1</em>', $html);
-        
+
         $html = preg_replace('/^&gt; (.*?)$/m', '<blockquote>$1</blockquote>', $html);
-        
+
         $html = preg_replace('/^---$/m', '<hr>', $html);
-        
+
         $html = preg_replace('/^\s*-\s+(.*?)$/m', '<li>$1</li>', $html);
-        
+
         $html = preg_replace_callback('/(<li>.*?<\/li>\s*)+/s', function($matches) {
             return "<ul>\n" . trim($matches[0]) . "\n</ul>";
         }, $html);
-        
+
         $html = preg_replace('/^\s*\d+\.\s+(.*?)$/m', '<li data-ordered>$1</li>', $html);
-        
+
         $html = preg_replace_callback('/(<li data-ordered>.*?<\/li>\s*)+/s', function($matches) {
              $content = str_replace(' data-ordered', '', $matches[0]);
              return "<ol>\n" . trim($content) . "\n</ol>";
@@ -645,7 +696,7 @@ class ReadmeGenerator {
         foreach ($codeBlocks as $id => $block) {
             $html = str_replace($id, $block, $html);
         }
-        
+
         return $html;
     }
 

@@ -1,0 +1,6 @@
+RewriteEngine On
+
+# Route every pretty URL to index.php, keeping static files accessible.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L,QSA]

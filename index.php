@@ -23,12 +23,16 @@ if (isset($_POST['download']) && isset($_POST['markdown_content'])) {
     exit;
 }
 
-$uri = trim($_SERVER['REQUEST_URI'], '/');
-$parts = explode('/', $uri);
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+$requestPath = trim($requestPath, '/');
+$parts = array_values(array_filter(explode('/', $requestPath), static function ($part) {
+    return $part !== '';
+}));
 
-if (count($parts) >= 2 && !empty($parts[0]) && !empty($parts[1]) && $parts[0] !== 'index.php') {
-    $ownerName = $parts[0];
-    $repoName = strtok($parts[1], '?');
+if (count($parts) >= 2 && $parts[0] !== 'index.php') {
+    $ownerName = rawurldecode($parts[0]);
+    $repoName = rawurldecode($parts[1]);
+    $repoName = preg_replace('/\.git$/i', '', $repoName);
     $autoMode = true;
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['repo_url'])) {
     if (strpos($_POST['repo_url'], 'github.com') === false) {
@@ -36,7 +40,7 @@ if (count($parts) >= 2 && !empty($parts[0]) && !empty($parts[1]) && $parts[0] !=
     } else {
         $urlParts = parse_url($_POST['repo_url']);
         $pathParts = explode('/', trim($urlParts['path'] ?? '', '/'));
-        
+
         if (count($pathParts) >= 2) {
             $ownerName = $pathParts[count($pathParts)-2];
             $repoName = str_replace('.git', '', $pathParts[count($pathParts)-1]);
@@ -58,17 +62,17 @@ if (($ownerName && $repoName) && !$error) {
         } else {
             $tempPath = $generator->cloneRepo($repoUrl);
             $analysis = $generator->analyze($tempPath);
-            
+
             $customImage = isset($_POST['custom_image']) && !empty($_POST['custom_image']) ? $_POST['custom_image'] : null;
-            
+
             $manualLicense = isset($_POST['license']) && !empty($_POST['license']) ? $_POST['license'] : null;
             if ($manualLicense) {
                 $analysis['license'] = $manualLicense;
             }
-            
+
             $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
             $previewHtml = $generator->simpleMarkdownToHtml($readmeContent);
-            
+
             $generator->cleanup();
         }
     } catch (Exception $e) {
@@ -98,7 +102,7 @@ if (($ownerName && $repoName) && !$error) {
             btn.innerText = 'Copied!';
             setTimeout(() => btn.innerText = originalText, 2000);
         }
-        
+
         function showLoading() {
             document.querySelector('.loading-overlay').classList.remove('hidden');
         }
@@ -106,7 +110,7 @@ if (($ownerName && $repoName) && !$error) {
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
+
             document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
             document.getElementById(`${tab}-content`).classList.add('active');
         }
