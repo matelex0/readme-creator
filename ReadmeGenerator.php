@@ -526,7 +526,7 @@ class ReadmeGenerator {
             $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
             $content = @file_get_contents($file->getPathname());
             if ($content !== false) {
-                $truncated = substr($content, 0, 1200);
+                $truncated = substr($content, 0, 500);
                 $result[$relativePath] = $truncated;
                 $totalChars += strlen($truncated);
             }

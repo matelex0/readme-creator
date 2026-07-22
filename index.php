@@ -109,30 +109,38 @@ if (($ownerName && $repoName) && !$error) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <script>
-        document.querySelector('form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const useAI = document.querySelector('[name="use_ai"]')?.checked;
-            document.querySelector('.loading-text').textContent = useAI
-                ? 'Generating with AI... This may take a moment.'
-                : 'Analyzing Repository...';
-            document.querySelector('.loading-overlay').classList.remove('hidden');
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelector('form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const useAI = document.querySelector('[name="use_ai"]')?.checked;
+                document.querySelector('.loading-text').textContent = useAI
+                    ? 'Generating with AI... This may take a moment.'
+                    : 'Analyzing Repository...';
+                document.querySelector('.loading-overlay').classList.remove('hidden');
 
-            const formData = new FormData(this);
-            try {
-                const response = await fetch(this.action, { method: 'POST', body: formData });
-                const html = await response.text();
-                document.open();
-                document.write(html);
-                document.close();
-            } catch (err) {
-                alert('Request failed. Please try again.');
-                document.querySelector('.loading-overlay').classList.add('hidden');
+                const formData = new FormData(this);
+                try {
+                    const response = await fetch(this.action, { method: 'POST', body: formData });
+                    const html = await response.text();
+                    document.open();
+                    document.write(html);
+                    document.close();
+                } catch (err) {
+                    alert('Request failed. Please try again.');
+                    document.querySelector('.loading-overlay').classList.add('hidden');
+                }
+            });
+
+            const aiCheckbox = document.querySelector('[name="use_ai"]');
+            if (aiCheckbox) {
+                aiCheckbox.addEventListener('change', function() {
+                    const wrapper = document.getElementById('lang-wrapper');
+                    if (wrapper) wrapper.style.display = this.checked ? '' : 'none';
+                });
             }
         });
 
-        document.querySelector('[name="use_ai"]').addEventListener('change', function() {
-            document.getElementById('lang-wrapper').style.display = this.checked ? '' : 'none';
-        });
+        function copyMarkdown() {
 
         function copyMarkdown() {
             const textarea = document.querySelector('.code-editor');
