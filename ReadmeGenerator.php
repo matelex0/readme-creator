@@ -468,6 +468,258 @@ class ReadmeGenerator {
         return array_unique($features);
     }
 
+    public function collectSourceContent($path) {
+        $maxFiles = $this->config['groq']['max_source_files'] ?? 15;
+        $maxChars = $this->config['groq']['max_source_chars'] ?? 8000;
+
+        $priorityNames = [
+            'package.json', 'composer.json', 'Cargo.toml', 'requirements.txt',
+            'Dockerfile', 'docker-compose.yml', 'Makefile', '.env.example',
+            'webpack.config.js', 'vite.config.js', 'vite.config.ts', 'tsconfig.json',
+            '.gitignore', 'Gemfile', 'Pipfile', 'pubspec.yaml', 'go.mod',
+            'pom.xml', 'build.gradle', 'README.md', 'readme.md',
+            'index.php', 'index.js', 'index.ts', 'main.py', 'main.go',
+            'main.rs', 'app.js', 'app.py', 'server.js', 'server.py',
+            'cli.php', 'artisan', 'manage.py',
+        ];
+
+        $codeExts = ['php', 'js', 'ts', 'py', 'go', 'rs', 'java', 'rb', 'c',
+                     'cpp', 'cs', 'vue', 'swift', 'kt', 'dart', 'sh', 'css',
+                     'scss', 'html', 'tf', 'yaml', 'yml', 'toml', 'lua'];
+
+        $result = [];
+        $totalChars = 0;
+        $filesList = [];
+
+        $dir = new RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS);
+        $iterator = new RecursiveIteratorIterator($dir, RecursiveIteratorIterator::SELF_FIRST);
+
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) continue;
+            $filesList[] = $file;
+        }
+
+        $priorityFiles = [];
+        $otherFiles = [];
+
+        foreach ($filesList as $file) {
+            $filename = $file->getFilename();
+            $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
+            $firstDir = explode(DIRECTORY_SEPARATOR, $relativePath)[0];
+
+            if (in_array($firstDir, $this->config['ignore_dirs'])) continue;
+
+            if (in_array($filename, $priorityNames)) {
+                $priorityFiles[] = $file;
+            } else {
+                $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+                if (in_array($ext, $codeExts)
+                    && !in_array($ext, $this->config['ignore_extensions'])
+                    && $file->getSize() <= 50000
+                ) {
+                    $otherFiles[] = $file;
+                }
+            }
+        }
+
+        foreach ($priorityFiles as $file) {
+            $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
+            $content = @file_get_contents($file->getPathname());
+            if ($content !== false) {
+                $truncated = mb_substr($content, 0, 3000);
+                $result[$relativePath] = $truncated;
+                $totalChars += strlen($truncated);
+            }
+        }
+
+        if ($totalChars < $maxChars) {
+            foreach ($otherFiles as $file) {
+                $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
+                if (isset($result[$relativePath])) continue;
+
+                $content = @file_get_contents($file->getPathname());
+                if ($content === false) continue;
+
+                $truncated = mb_substr($content, 0, 2000);
+                $result[$relativePath] = $truncated;
+                $totalChars += strlen($truncated);
+
+                if (count($result) >= $maxFiles || $totalChars >= $maxChars) break;
+            }
+        }
+
+        return $result;
+    }
+
+    public function callGroq($messages) {
+        $apiKey = $this->config['groq']['api_key'] ?? '';
+        if (empty($apiKey) || $apiKey === 'YOUR_GROQ_API_KEY_HERE') {
+            throw new Exception('Groq API key not configured. Set it in config.php.');
+        }
+
+        $url = 'https://api.groq.com/openai/v1/chat/completions';
+        $maxRetries = 5;
+
+        $payload = [
+            'model' => $this->config['groq']['model'] ?? 'llama-3.1-70b-versatile',
+            'messages' => $messages,
+            'max_tokens' => $this->config['groq']['max_tokens'] ?? 8000,
+            'temperature' => $this->config['groq']['temperature'] ?? 0.7,
+        ];
+
+        $lastError = '';
+
+        for ($attempt = 0; $attempt <= $maxRetries; $attempt++) {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $url,
+                CURLOPT_POST => true,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Authorization: Bearer ' . $apiKey,
+                ],
+                CURLOPT_POSTFIELDS => json_encode($payload),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 120,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_HEADER => true,
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $curlError = curl_error($ch);
+
+            if ($response === false) {
+                curl_close($ch);
+                if ($attempt >= $maxRetries) {
+                    throw new Exception('Groq API connection error after ' . ($maxRetries + 1) . ' attempts: ' . $curlError);
+                }
+                $lastError = $curlError;
+                $wait = pow(2, $attempt + 1);
+                sleep($wait);
+                continue;
+            }
+
+            $headers = substr($response, 0, $headerSize);
+            $body = substr($response, $headerSize);
+            curl_close($ch);
+
+            if ($httpCode === 200) {
+                $data = json_decode($body, true);
+                if (!isset($data['choices'][0]['message']['content'])) {
+                    throw new Exception('Groq API returned an empty response. The model may have been filtered or blocked.');
+                }
+                return $data['choices'][0]['message']['content'];
+            }
+
+            $data = json_decode($body, true);
+            $errorMsg = $data['error']['message'] ?? 'Unknown error';
+
+            if ($httpCode === 429) {
+                preg_match('/Retry-After:\s*(\d+)/i', $headers, $matches);
+                $retryAfter = isset($matches[1]) ? (int)$matches[1] : pow(2, $attempt + 1);
+
+                if ($attempt >= $maxRetries) {
+                    throw new Exception('Groq API rate limit exceeded after ' . ($maxRetries + 1) . ' attempts: ' . $errorMsg . '. Try again later.');
+                }
+
+                $lastError = 'Rate limited (HTTP 429): ' . $errorMsg . '. Retrying in ' . $retryAfter . 's...';
+                sleep($retryAfter);
+                continue;
+            }
+
+            if ($httpCode === 401) {
+                throw new Exception('Groq API authentication failed (HTTP 401). Check your API key in config.php.');
+            }
+
+            if ($httpCode === 400) {
+                throw new Exception('Groq API bad request (HTTP 400): ' . $errorMsg . '. Try a different model or reduce the input size.');
+            }
+
+            throw new Exception('Groq API error (HTTP ' . $httpCode . '): ' . $errorMsg);
+        }
+
+        throw new Exception('Groq API request failed after ' . ($maxRetries + 1) . ' attempts. ' . $lastError);
+    }
+
+    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = []) {
+        $totalBytes = array_sum($data['languages']);
+        $langDetails = '';
+        if ($totalBytes > 0) {
+            foreach ($data['languages'] as $lang => $bytes) {
+                $pct = round(($bytes / $totalBytes) * 100, 1);
+                if ($pct >= 1) $langDetails .= "- {$lang}: {$pct}%\n";
+            }
+        }
+
+        $techStack = !empty($data['frameworks'])
+            ? implode(', ', array_keys($data['frameworks']))
+            : 'None detected';
+
+        $features = $this->generateFeatures($data);
+        $featuresList = '';
+        foreach ($features as $f) {
+            $featuresList .= "- {$f}\n";
+        }
+
+        $structure = $this->generateTree($data['structure']);
+
+        $sourceBlock = '';
+        $currentChars = 0;
+        foreach ($sourceContent as $filePath => $content) {
+            $block = "### {$filePath}\n```\n{$content}\n```\n\n";
+            if ($currentChars + strlen($block) > 8000) {
+                $remaining = 8000 - $currentChars;
+                if ($remaining > 100) {
+                    $sourceBlock .= mb_substr($block, 0, $remaining) . "\n";
+                }
+                break;
+            }
+            $sourceBlock .= $block;
+            $currentChars += strlen($block);
+        }
+
+        $imageUrl = $customImage ?: $this->getSocialifyUrl($owner, $repo);
+
+        $systemPrompt = "You are an expert technical writer specialized in creating comprehensive GitHub README documentation. Generate a professional, detailed README.md file in GitHub-flavored Markdown. Use real information from the repository analysis and source code. Do NOT use placeholder text like 'your-username' or 'your-repo' — fill everything with actual data. Include shields.io badges for license, languages, repo size, issues, and stars where appropriate. Use proper headers, code blocks, and formatting.";
+
+        $userPrompt = "Generate a complete README.md for **{$owner}/{$repo}**.\n\n"
+            . "## Repository Info\n"
+            . "- Owner: {$owner}\n- Repo: {$repo}\n- URL: {$url}\n"
+            . "- Description: " . ($data['description'] ?? 'N/A') . "\n"
+            . "- License: {$data['license']}\n"
+            . "- Author: " . ($data['author'] ?? $owner) . "\n"
+            . "- Version: " . ($data['version'] ?? 'N/A') . "\n\n"
+            . "## Languages\n{$langDetails}\n"
+            . "## Tech Stack\n{$techStack}\n\n"
+            . "## Flags\n"
+            . "- Tests: " . ($data['has_tests'] ? 'Yes' : 'No') . "\n"
+            . "- Docker: " . ($data['has_docker'] ? 'Yes' : 'No') . "\n"
+            . "- Env Config: " . ($data['has_env'] ? 'Yes' : 'No') . "\n"
+            . "- Makefile: " . ($data['has_makefile'] ? 'Yes' : 'No') . "\n\n"
+            . "## Features\n{$featuresList}\n"
+            . "## Structure\n```\n{$structure}```\n\n"
+            . "## Header Image\n{$imageUrl}\n\n"
+            . ($sourceBlock ? "## Source Files\n{$sourceBlock}" : "")
+            . "\n\nGenerate a README.md with these sections in order:\n"
+            . "1. Centered header with the image and repo name\n"
+            . "2. Badges (license, top language, size, issues, stars)\n"
+            . "3. Engaging description\n"
+            . "4. Tech Stack badges\n"
+            . "5. Feature list\n"
+            . "6. Getting Started (prerequisites, install, run)\n"
+            . "7. Project Structure (use the tree above)\n"
+            . "8. Contributing guidelines\n"
+            . "9. License\n\n"
+            . "Output ONLY the raw markdown. No code fences, no extra text.";
+
+        return $this->callGroq([
+            ['role' => 'system', 'content' => $systemPrompt],
+            ['role' => 'user', 'content' => $userPrompt],
+        ]);
+    }
+
     public function generateMarkdown($owner, $repo, $data, $url, $customImage = null) {
         $description = isset($data['description']) ? $data['description'] : "";
         $author = $data['author'] ? $data['author'] : $owner;

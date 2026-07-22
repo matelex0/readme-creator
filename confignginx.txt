@@ -1,0 +1,27 @@
+server {
+    listen 80;
+    server_name _; # Risponde a qualsiasi richiesta sulla porta 80
+
+    root /var/www/readme-creator;
+    index index.php index.html;
+
+    # PROTEZIONE CARTELLA: vieta l'accesso ai PHP in /temp_repos
+    location /temp_repos {
+        location ~ \.php$ {
+            deny all;
+        }
+    }
+
+    # Front controller per tutte le richieste “pretty URL”
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # Gestione PHP
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        # Conferma che questa versione (8.3) sia quella corretta sul tuo sistema
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}

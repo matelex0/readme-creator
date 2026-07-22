@@ -1,0 +1,19 @@
+# Environment
+.env
+
+# Temp cloned repos
+temp_repos/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dependencies (if using composer in the future)
+vendor/

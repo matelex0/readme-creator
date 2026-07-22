@@ -10,6 +10,7 @@ $config = require 'config.php';
 $generator = new ReadmeGenerator($config);
 
 $error = null;
+$aiError = null;
 $readmeContent = null;
 $previewHtml = null;
 $repoName = '';
@@ -70,7 +71,20 @@ if (($ownerName && $repoName) && !$error) {
                 $analysis['license'] = $manualLicense;
             }
 
-            $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
+            $useAI = isset($_POST['use_ai']) && $_POST['use_ai'] === '1';
+
+            if ($useAI) {
+                try {
+                    $sourceContent = $generator->collectSourceContent($tempPath);
+                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent);
+                } catch (Exception $e) {
+                    $aiError = $e->getMessage();
+                    $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
+                }
+            } else {
+                $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
+            }
+
             $previewHtml = $generator->simpleMarkdownToHtml($readmeContent);
 
             $generator->cleanup();
@@ -157,6 +171,10 @@ if (($ownerName && $repoName) && !$error) {
                                     <option value="BSD 3-Clause License">BSD 3-Clause</option>
                                 </select>
                             </div>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="use_ai" value="1" <?php echo isset($_POST['use_ai']) ? 'checked' : ''; ?>>
+                                <span class="checkbox-text">Generate with AI <span class="badge-ai">AI</span></span>
+                            </label>
                             <button type="submit" class="btn primary btn-block">Generate README</button>
                         </div>
                     </form>
@@ -165,6 +183,12 @@ if (($ownerName && $repoName) && !$error) {
                 <?php if ($error): ?>
                     <div class="card" style="margin-top: 20px; border-color: var(--mac-red); color: var(--mac-red); text-align: center;">
                         <?php echo htmlspecialchars($error); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($aiError): ?>
+                    <div class="card" style="margin-top: 20px; border-color: var(--mac-yellow); color: var(--mac-yellow); text-align: center; font-size: 13px;">
+                        AI generation unavailable: <?php echo htmlspecialchars($aiError); ?>. Falling back to standard generation.
                     </div>
                 <?php endif; ?>
 
