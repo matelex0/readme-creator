@@ -680,73 +680,75 @@ class ReadmeGenerator {
 
         $lang = ($language === 'it') ? 'Italian' : 'English';
 
-        $systemPrompt = "You are an expert technical writer. Generate a complete, polished README.md in {$lang} for a GitHub project.
+        $systemPrompt = <<<PROMPT
+You are an expert technical writer. Generate a comprehensive, detailed README.md in {$lang} for a GitHub project.
 
-STRICT RULES:
-- Output ONLY the raw markdown. No explanation, no code fences.
-- Use real project data. NEVER use placeholders.
-- Use shields.io badges (https://img.shields.io/badge/...).
-- Use emojis in feature list (🚀 ⚡ 🔧 📦 🎯 💡 etc).
-- Every section must be complete and detailed.
+ABSOLUTE RULES:
+- Output ONLY raw markdown. No explanation, no wrapper fences.
+- Use REAL project data. NEVER use placeholders like "your-username", "your-repo", "your_email@example.com".
+- Every section must be LONG and DETAILED. Minimum 1 paragraph per section, more where appropriate.
+- Use emojis throughout (🚀 ⚡ 🔧 📦 🎯 💡 🔥 📖 🎨 🛠️ ✅ etc).
+- Use shields.io badges: https://img.shields.io/badge/...
+- Do NOT put markdown syntax inside HTML tags. Inside <div> use ONLY <img>. Markdown outside div.
 
-⚠️ CRITICAL: Do NOT put markdown syntax inside HTML tags.
-- Inside <div> use ONLY HTML tags (<img>, <br>, etc.), NOT markdown (![], **, ##).
-- Markdown images/syntax outside <div> only.
-- GitHub and standard markdown parsers ignore markdown inside raw HTML blocks.
+STRUCTURE:
 
-FORMAT (use this exact structure):
-<div align=\"center\">
-  <img src=\"HEADER_IMAGE_URL\" alt=\"PROJECT_NAME\" width=\"500\" />
+<div align="center">
+  <img src="HEADER_IMAGE_URL" alt="PROJECT_NAME" width="500" />
 </div>
 
-![License](https://img.shields.io/badge/License-MIT-blue) ![Language](https://img.shields.io/badge/Language-Python-blue)
+![License](https://img.shields.io/badge/License-MIT-blue) ![Last Commit](https://img.shields.io/github/last-commit/OWNER/REPO)
 
-**Project Description** — A brief description here.
+**Project Name** — A compelling, 2-3 sentence description of what the project does, who it's for, and why it's useful.
 
 ## Tech Stack
 
+List EVERY language and framework detected. Format as badges:
 ![Language](https://img.shields.io/badge/Language-COLOR?style=for-the-badge&logo=...&logoColor=white)
+
+## Features
+
+Write 6-10 detailed features, each with emoji, using the repository analysis data and source code context below. Make them SPECIFIC to this project, not generic. Examples:
+- 🔥 **Real-time updates** — WebSocket integration for live data synchronization across all clients
+- 🎨 **Custom theming engine** — Full CSS variable support with 4 built-in themes and dark mode
+- 🛠️ **CLI tool included** — Command-line interface for batch operations without the GUI
+- 📦 **Modular architecture** — Plugin-based system allowing third-party extensions
 
 ## Getting Started
 
 ### Prerequisites
-
-- Requirement 1 (with version if detected)
-- Requirement 2 (with version if detected)
+List EVERY requirement with specific versions detected. Include OS-specific notes.
 
 ### Installation
-
-Show multiple methods when applicable (different OS, different package managers):
-\`\`\`bash
-# Clone
-git clone URL
-cd REPO
-
-# Method 1 (e.g., npm/pip)
-npm install
-
-# Method 2 (alternative)
-brew install ...
-\`\`\`
+Provide MULTIPLE installation methods when applicable (package managers, Docker, manual). Include code blocks for each. Write actual commands specific to this project's tech stack.
 
 ### Running
+Show ALL ways to run the project:
+- Development mode
+- Production mode
+- Docker mode (if Dockerfile exists)
+- CLI usage (if CLI detected)
+Include cross-platform notes for Linux/macOS/Windows.
 
-Show commands for both dev and production, with OS variants if relevant:
-\`\`\`bash
-# Development
-npm run dev
+## Project Structure
 
-# Production
-npm start
+Use the structure tree provided.
 
-# Or for cross-platform
-python main.py
-\`\`\`
+## Contributing
 
-### LICENSE section
-If the actual LICENSE file content is provided in the Source Files below, read it and write a short human summary (e.g., \"MIT License — you are free to use, copy, modify, and distribute this software.\"). Do NOT say \"See LICENSE file\" or \"licensed under the terms of the LICENSE file\".
+Write a proper guide (3-5 paragraphs):
+1. How to fork and setup locally
+2. Code style guidelines (based on detected language)
+3. Testing instructions (if tests detected)
+4. Pull Request process
 
-Include ALL these sections in order: ## Tech Stack, ## Features, ## Getting Started (with ### Prerequisites, ### Installation, ### Running), ## Project Structure, ## Contributing, ## License.";
+## License
+
+If the actual LICENSE file content is provided below, read it and write a 2-3 sentence human summary. Example: "This project is licensed under the MIT License — you are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the software."
+
+IMPORTANT: Generate at least 200 lines of markdown. Make every section count.
+PROMPT;
+
 
         $userPrompt = "Generate a README.md for **{$owner}/{$repo}**.\n\n"
             . "## Repository Info\n"
