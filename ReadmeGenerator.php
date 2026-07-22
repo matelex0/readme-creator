@@ -481,6 +481,7 @@ class ReadmeGenerator {
             'index.php', 'index.js', 'index.ts', 'main.py', 'main.go',
             'main.rs', 'app.js', 'app.py', 'server.js', 'server.py',
             'cli.php', 'artisan', 'manage.py',
+            'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'license', 'license.md', 'license.txt',
         ];
 
         $codeExts = ['php', 'js', 'ts', 'py', 'go', 'rs', 'java', 'rb', 'c',
@@ -688,36 +689,19 @@ STRICT RULES:
 - Use emojis in feature list (🚀 ⚡ 🔧 📦 🎯 💡 etc).
 - Every section must be complete and detailed.
 
-⚠️ FORMAT RESTRICTIONS (for preview compatibility):
-- For centered elements use <div align=\"center\"> ONLY, NOT <p>.
-- Do NOT use raw HTML tags like <a>, <h1>, <h2>, <strong> in headings.
-- Use standard markdown: ## for headings, **bold**, - lists, ``` code blocks.
-- For the header image: just <img> inside <div align=\"center\"> (no <a> wrapper).
-- Badges can be inline inside <div align=\"center\">.
+⚠️ CRITICAL: Do NOT put markdown syntax inside HTML tags.
+- Inside <div> use ONLY HTML tags (<img>, <br>, etc.), NOT markdown (![], **, ##).
+- Markdown images/syntax outside <div> only.
+- GitHub and standard markdown parsers ignore markdown inside raw HTML blocks.
 
-REQUIRED SECTIONS in order:
-1. HEADER: <div align=\"center\"> with <img> (socialify image), then close div.
-2. BADGES: License, Top Language, Repo Size, Issues, Stars — use shields.io
-3. DESCRIPTION: Bold project name, one clear paragraph
-4. TECH STACK: Badges for each language/framework
-5. FEATURES: Emoji bullet list, 4-6 specific items
-6. GETTING STARTED: Prerequisites, Installation, Running — with code blocks
-7. PROJECT STRUCTURE: Code block with the tree
-8. CONTRIBUTING: Brief guide
-9. LICENSE: From the data
-
-FORMAT EXAMPLE:
+FORMAT (use this exact structure):
 <div align=\"center\">
-  <img src=\"HEADER_IMAGE\" alt=\"REPO_NAME\" width=\"500\" />
+  <img src=\"HEADER_IMAGE_URL\" alt=\"PROJECT_NAME\" width=\"500\" />
 </div>
 
-<div align=\"center\">
+![License](https://img.shields.io/badge/License-MIT-blue) ![Language](https://img.shields.io/badge/Language-Python-blue)
 
-![License](https://img.shields.io/badge/License-MIT-blue) ![Language](https://img.shields.io/github/languages/top/OWNER/REPO)
-
-**Project Name** — Description here.
-
-</div>
+**Project Description** — A brief description here.
 
 ## Tech Stack
 
@@ -727,17 +711,42 @@ FORMAT EXAMPLE:
 
 ### Prerequisites
 
-- Requirement 1
-- Requirement 2
+- Requirement 1 (with version if detected)
+- Requirement 2 (with version if detected)
 
 ### Installation
 
+Show multiple methods when applicable (different OS, different package managers):
 \`\`\`bash
+# Clone
 git clone URL
 cd REPO
+
+# Method 1 (e.g., npm/pip)
+npm install
+
+# Method 2 (alternative)
+brew install ...
 \`\`\`
 
-...and so on for all sections.";
+### Running
+
+Show commands for both dev and production, with OS variants if relevant:
+\`\`\`bash
+# Development
+npm run dev
+
+# Production
+npm start
+
+# Or for cross-platform
+python main.py
+\`\`\`
+
+### LICENSE section
+If the actual LICENSE file content is provided in the Source Files below, read it and write a short human summary (e.g., \"MIT License — you are free to use, copy, modify, and distribute this software.\"). Do NOT say \"See LICENSE file\" or \"licensed under the terms of the LICENSE file\".
+
+Include ALL these sections in order: ## Tech Stack, ## Features, ## Getting Started (with ### Prerequisites, ### Installation, ### Running), ## Project Structure, ## Contributing, ## License.";
 
         $userPrompt = "Generate a README.md for **{$owner}/{$repo}**.\n\n"
             . "## Repository Info\n"
