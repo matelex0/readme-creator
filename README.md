@@ -87,13 +87,20 @@ echo 'GROQ_API_KEY=your_groq_api_key_here' > .env
 ```
 Get an API key at [console.groq.com](https://console.groq.com).
 
+5. Install PHP cURL extension (required for AI generation):
+```bash
+sudo apt install php-curl
+sudo systemctl restart apache2
+```
+
 ## Usage
 
 1. Open the application in your web browser (e.g., `http://localhost/readme-creator`).
 2. Enter a GitHub repository URL (e.g., `https://github.com/username/repo`) or use the short format `username/repo` in the URL path.
 3. Check **Generate with AI** for AI-enhanced README generation (requires Groq API key).
-4. Click **Generate**.
-5. Review the generated README, then click **Copy Markdown** or **Download**.
+4. Select the **language** (English / Italiano) for the AI-generated README.
+5. Click **Generate**.
+6. Review the generated README, then click **Copy Markdown** or **Download**.
 
 > **Tip:** Replace `github.com` with `readme.matelex.it` in any repo URL to auto-generate instantly with AI (e.g., `readme.matelex.it/username/repo`).
 

@@ -647,9 +647,9 @@ class ReadmeGenerator {
 
         throw new Exception('Groq API request failed after ' . ($maxRetries + 1) . ' attempts. ' . $lastError);
     }
-
-    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = []) {
+    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = [], $language = 'en') {
         set_time_limit(0);
+
         $totalBytes = array_sum($data['languages']);
         $langDetails = '';
         if ($totalBytes > 0) {
@@ -659,15 +659,10 @@ class ReadmeGenerator {
             }
         }
 
-        $techStack = !empty($data['frameworks'])
-            ? implode(', ', array_keys($data['frameworks']))
-            : 'None detected';
+        $frameworks = array_keys($data['frameworks']);
+        $techStack = !empty($frameworks) ? implode(', ', $frameworks) : 'None';
 
         $features = $this->generateFeatures($data);
-        $featuresList = '';
-        foreach ($features as $f) {
-            $featuresList .= "- {$f}\n";
-        }
 
         $structure = $this->generateTree($data['structure']);
 
@@ -675,22 +670,53 @@ class ReadmeGenerator {
         $currentChars = 0;
         foreach ($sourceContent as $filePath => $content) {
             $block = "### {$filePath}\n```\n{$content}\n```\n\n";
-            if ($currentChars + strlen($block) > 8000) {
-                $remaining = 8000 - $currentChars;
-                if ($remaining > 100) {
-                    $sourceBlock .= substr($block, 0, $remaining) . "\n";
-                }
-                break;
-            }
+            if ($currentChars + strlen($block) > $this->config['groq']['max_source_chars']) break;
             $sourceBlock .= $block;
             $currentChars += strlen($block);
         }
 
         $imageUrl = $customImage ?: $this->getSocialifyUrl($owner, $repo);
 
-        $systemPrompt = "You are an expert technical writer specialized in creating comprehensive GitHub README documentation. Generate a professional, detailed README.md file in GitHub-flavored Markdown. Use real information from the repository analysis and source code. Do NOT use placeholder text like 'your-username' or 'your-repo' — fill everything with actual data. Include shields.io badges for license, languages, repo size, issues, and stars where appropriate. Use proper headers, code blocks, and formatting.";
+        $lang = ($language === 'it') ? 'Italian' : 'English';
 
-        $userPrompt = "Generate a complete README.md for **{$owner}/{$repo}**.\n\n"
+        $systemPrompt = "You are an expert technical writer. Generate a complete, polished README.md in {$lang} for a GitHub project.
+
+STRICT RULES:
+- Output ONLY the raw markdown. No explanation, no code fences around the output.
+- Use real project data. NEVER use placeholders like 'your-username' or 'your-repo'.
+- Use shields.io badges format: https://img.shields.io/badge/...
+- Wrap header image in <p align=\"center\"> NOT div.
+- Use emojis in feature list (🚀 ⚡ 🔧 📦 🎯 💡 etc).
+- Every section must be complete and well-written.
+
+REQUIRED SECTIONS in order:
+1. HEADER: <p align=\"center\"> with socialify image wrapped in <a>, then <h1 align=\"center\">repo name</h1>
+2. BADGES: License, Top Language, Repo Size, Issues, Stars
+3. DESCRIPTION: Bold project name, clear one-paragraph description
+4. TECH STACK: Badges for each language/framework
+5. FEATURES: Emoji bullet list, 4-6 items
+6. GETTING STARTED: Prerequisites (lang-specific, version), Installation (clone + lang-specific deps), Running
+7. PROJECT STRUCTURE: Code block with the tree
+8. CONTRIBUTING: Standard guide, 3-4 steps
+9. LICENSE: From the data
+
+FORMAT EXAMPLE (copy this style exactly):
+<p align=\"center\">
+  <a href=\"REPO_URL\">
+    <img src=\"HEADER_IMAGE\" alt=\"REPO_NAME\" />
+  </a>
+  <h1 align=\"center\">REPO_NAME</h1>
+</p>
+
+![License](https://img.shields.io/badge/license-MIT-blue) ![Top Language](https://img.shields.io/github/languages/top/OWNER/REPO?logo=...)
+
+**Project Name** is a... (description)
+
+## Tech Stack
+
+![Language](https://img.shields.io/badge/Language-COLOR?style=for-the-badge&logo=...&logoColor=white)";
+
+        $userPrompt = "Generate a README.md for **{$owner}/{$repo}**.\n\n"
             . "## Repository Info\n"
             . "- Owner: {$owner}\n- Repo: {$repo}\n- URL: {$url}\n"
             . "- Description: " . ($data['description'] ?? 'N/A') . "\n"
@@ -702,23 +728,15 @@ class ReadmeGenerator {
             . "## Flags\n"
             . "- Tests: " . ($data['has_tests'] ? 'Yes' : 'No') . "\n"
             . "- Docker: " . ($data['has_docker'] ? 'Yes' : 'No') . "\n"
-            . "- Env Config: " . ($data['has_env'] ? 'Yes' : 'No') . "\n"
-            . "- Makefile: " . ($data['has_makefile'] ? 'Yes' : 'No') . "\n\n"
-            . "## Features\n{$featuresList}\n"
-            . "## Structure\n```\n{$structure}```\n\n"
-            . "## Header Image\n{$imageUrl}\n\n"
-            . ($sourceBlock ? "## Source Files\n{$sourceBlock}" : "")
-            . "\n\nGenerate a README.md with these sections in order:\n"
-            . "1. Centered header with the image and repo name\n"
-            . "2. Badges (license, top language, size, issues, stars)\n"
-            . "3. Engaging description\n"
-            . "4. Tech Stack badges\n"
-            . "5. Feature list\n"
-            . "6. Getting Started (prerequisites, install, run)\n"
-            . "7. Project Structure (use the tree above)\n"
-            . "8. Contributing guidelines\n"
-            . "9. License\n\n"
-            . "Output ONLY the raw markdown. No code fences, no extra text.";
+            . "- Env Config: " . ($data['has_env'] ? 'Yes' : 'No') . "\n\n"
+            . "## Features\n";
+        foreach ($features as $f) {
+            $userPrompt .= "- {$f}\n";
+        }
+        $userPrompt .= "\n## Structure\n```\n{$structure}```\n\n"
+            . "## Header Image URL\n{$imageUrl}\n\n"
+            . ($sourceBlock ? "## Source Files Context\n{$sourceBlock}" : "")
+            . "\n---\nGenerate the complete README.md in {$lang}. Output ONLY the markdown.";
 
         return $this->callGroq([
             ['role' => 'system', 'content' => $systemPrompt],

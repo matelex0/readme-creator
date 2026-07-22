@@ -72,12 +72,13 @@ if (($ownerName && $repoName) && !$error) {
             }
 
             $useAI = (isset($autoMode) && $autoMode) || (isset($_POST['use_ai']) && $_POST['use_ai'] === '1');
+            $language = isset($_POST['language']) && $_POST['language'] === 'it' ? 'it' : 'en';
 
             if ($useAI) {
                 try {
                     set_time_limit(0);
                     $sourceContent = $generator->collectSourceContent($tempPath);
-                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent);
+                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent, $language);
                 } catch (Exception $e) {
                     $aiError = $e->getMessage();
                     $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
@@ -127,6 +128,10 @@ if (($ownerName && $repoName) && !$error) {
                 alert('Request failed. Please try again.');
                 document.querySelector('.loading-overlay').classList.add('hidden');
             }
+        });
+
+        document.querySelector('[name="use_ai"]').addEventListener('change', function() {
+            document.getElementById('lang-wrapper').style.display = this.checked ? '' : 'none';
         });
 
         function copyMarkdown() {
@@ -193,6 +198,12 @@ if (($ownerName && $repoName) && !$error) {
                                 <input type="checkbox" name="use_ai" value="1" <?php echo isset($_POST['use_ai']) ? 'checked' : ''; ?>>
                                 <span class="checkbox-text">Generate with AI <span class="badge-ai">AI</span></span>
                             </label>
+                            <div class="select-wrapper" id="lang-wrapper" style="<?php echo isset($_POST['use_ai']) ? '' : 'display:none;'; ?>">
+                                <select name="language">
+                                    <option value="en" <?php echo (!isset($_POST['language']) || $_POST['language'] === 'en') ? 'selected' : ''; ?>>English</option>
+                                    <option value="it" <?php echo (isset($_POST['language']) && $_POST['language'] === 'it') ? 'selected' : ''; ?>>Italiano</option>
+                                </select>
+                            </div>
                             <button type="submit" class="btn primary btn-block">Generate README</button>
                         </div>
                     </form>
