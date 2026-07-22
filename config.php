@@ -34,10 +34,10 @@ return [
 
     'groq' => [
         'api_key' => $_ENV['GROQ_API_KEY'] ?? getenv('GROQ_API_KEY') ?: 'YOUR_GROQ_API_KEY_HERE',
-        'model' => 'groq/compound',
+        'model' => 'llama-3.3-70b-versatile',
         'max_tokens' => 8192,
         'temperature' => 0.7,
         'max_source_files' => 2,
-        'max_source_chars' => 800,
+        'max_source_chars' => 2000,
     ],
 ];

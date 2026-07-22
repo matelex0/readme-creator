@@ -682,39 +682,62 @@ class ReadmeGenerator {
         $systemPrompt = "You are an expert technical writer. Generate a complete, polished README.md in {$lang} for a GitHub project.
 
 STRICT RULES:
-- Output ONLY the raw markdown. No explanation, no code fences around the output.
-- Use real project data. NEVER use placeholders like 'your-username' or 'your-repo'.
-- Use shields.io badges format: https://img.shields.io/badge/...
-- Wrap header image in <p align=\"center\"> NOT div.
+- Output ONLY the raw markdown. No explanation, no code fences.
+- Use real project data. NEVER use placeholders.
+- Use shields.io badges (https://img.shields.io/badge/...).
 - Use emojis in feature list (🚀 ⚡ 🔧 📦 🎯 💡 etc).
-- Every section must be complete and well-written.
+- Every section must be complete and detailed.
+
+⚠️ FORMAT RESTRICTIONS (for preview compatibility):
+- For centered elements use <div align=\"center\"> ONLY, NOT <p>.
+- Do NOT use raw HTML tags like <a>, <h1>, <h2>, <strong> in headings.
+- Use standard markdown: ## for headings, **bold**, - lists, ``` code blocks.
+- For the header image: just <img> inside <div align=\"center\"> (no <a> wrapper).
+- Badges can be inline inside <div align=\"center\">.
 
 REQUIRED SECTIONS in order:
-1. HEADER: <p align=\"center\"> with socialify image wrapped in <a>, then <h1 align=\"center\">repo name</h1>
-2. BADGES: License, Top Language, Repo Size, Issues, Stars
-3. DESCRIPTION: Bold project name, clear one-paragraph description
+1. HEADER: <div align=\"center\"> with <img> (socialify image), then close div.
+2. BADGES: License, Top Language, Repo Size, Issues, Stars — use shields.io
+3. DESCRIPTION: Bold project name, one clear paragraph
 4. TECH STACK: Badges for each language/framework
-5. FEATURES: Emoji bullet list, 4-6 items
-6. GETTING STARTED: Prerequisites (lang-specific, version), Installation (clone + lang-specific deps), Running
+5. FEATURES: Emoji bullet list, 4-6 specific items
+6. GETTING STARTED: Prerequisites, Installation, Running — with code blocks
 7. PROJECT STRUCTURE: Code block with the tree
-8. CONTRIBUTING: Standard guide, 3-4 steps
+8. CONTRIBUTING: Brief guide
 9. LICENSE: From the data
 
-FORMAT EXAMPLE (copy this style exactly):
-<p align=\"center\">
-  <a href=\"REPO_URL\">
-    <img src=\"HEADER_IMAGE\" alt=\"REPO_NAME\" />
-  </a>
-  <h1 align=\"center\">REPO_NAME</h1>
-</p>
+FORMAT EXAMPLE:
+<div align=\"center\">
+  <img src=\"HEADER_IMAGE\" alt=\"REPO_NAME\" width=\"500\" />
+</div>
 
-![License](https://img.shields.io/badge/license-MIT-blue) ![Top Language](https://img.shields.io/github/languages/top/OWNER/REPO?logo=...)
+<div align=\"center\">
 
-**Project Name** is a... (description)
+![License](https://img.shields.io/badge/License-MIT-blue) ![Language](https://img.shields.io/github/languages/top/OWNER/REPO)
+
+**Project Name** — Description here.
+
+</div>
 
 ## Tech Stack
 
-![Language](https://img.shields.io/badge/Language-COLOR?style=for-the-badge&logo=...&logoColor=white)";
+![Language](https://img.shields.io/badge/Language-COLOR?style=for-the-badge&logo=...&logoColor=white)
+
+## Getting Started
+
+### Prerequisites
+
+- Requirement 1
+- Requirement 2
+
+### Installation
+
+\`\`\`bash
+git clone URL
+cd REPO
+\`\`\`
+
+...and so on for all sections.";
 
         $userPrompt = "Generate a README.md for **{$owner}/{$repo}**.\n\n"
             . "## Repository Info\n"
