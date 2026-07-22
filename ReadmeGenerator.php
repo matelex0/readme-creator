@@ -681,15 +681,13 @@ class ReadmeGenerator {
         $lang = ($language === 'it') ? 'Italian' : 'English';
 
         $systemPrompt = <<<PROMPT
-You are an expert technical writer. Generate a comprehensive, detailed README.md in {$lang} for a GitHub project.
+You are an expert technical writer. Generate a polished, high-quality README.md in {$lang} for a GitHub project.
 
-ABSOLUTE RULES:
-- Output ONLY raw markdown. No explanation, no wrapper fences.
-- Use REAL project data. NEVER use placeholders like "your-username", "your-repo", "your_email@example.com".
-- Every section must be LONG and DETAILED. Minimum 1 paragraph per section, more where appropriate.
-- Use emojis throughout (🚀 ⚡ 🔧 📦 🎯 💡 🔥 📖 🎨 🛠️ ✅ etc).
-- Use shields.io badges: https://img.shields.io/badge/...
-- Do NOT put markdown syntax inside HTML tags. Inside <div> use ONLY <img>. Markdown outside div.
+RULES:
+- Output ONLY raw markdown. No explanation, no fences.
+- Use REAL project data from the analysis below. NEVER use placeholders.
+- shields.io badges format: https://img.shields.io/badge/...
+- Do NOT put markdown syntax inside HTML tags. Inside <div> use ONLY <img>.
 
 STRUCTURE:
 
@@ -699,54 +697,52 @@ STRUCTURE:
 
 ![License](https://img.shields.io/badge/License-MIT-blue) ![Last Commit](https://img.shields.io/github/last-commit/OWNER/REPO)
 
-**Project Name** — A compelling, 2-3 sentence description of what the project does, who it's for, and why it's useful.
+**Project Name** — One compelling sentence describing the project.
 
 ## Tech Stack
 
-List EVERY language and framework detected. Format as badges:
-![Language](https://img.shields.io/badge/Language-COLOR?style=for-the-badge&logo=...&logoColor=white)
+Badge for each detected technology:
+![Name](https://img.shields.io/badge/Name-COLOR?style=for-the-badge&logo=...&logoColor=white)
 
 ## Features
 
-Write 6-10 detailed features, each with emoji, using the repository analysis data and source code context below. Make them SPECIFIC to this project, not generic. Examples:
-- 🔥 **Real-time updates** — WebSocket integration for live data synchronization across all clients
-- 🎨 **Custom theming engine** — Full CSS variable support with 4 built-in themes and dark mode
-- 🛠️ **CLI tool included** — Command-line interface for batch operations without the GUI
-- 📦 **Modular architecture** — Plugin-based system allowing third-party extensions
+6-10 features. Format: emoji + **bold title** only (no extra description).
+✅ "🚀 **Real-time WebSocket updates**"
+❌ No long descriptions after the title.
 
 ## Getting Started
 
 ### Prerequisites
-List EVERY requirement with specific versions detected. Include OS-specific notes.
+Requirements with specific versions.
 
 ### Installation
-Provide MULTIPLE installation methods when applicable (package managers, Docker, manual). Include code blocks for each. Write actual commands specific to this project's tech stack.
+\`\`\`bash
+git clone URL
+cd REPO
+# install commands
+\`\`\`
 
 ### Running
-Show ALL ways to run the project:
-- Development mode
-- Production mode
-- Docker mode (if Dockerfile exists)
-- CLI usage (if CLI detected)
-Include cross-platform notes for Linux/macOS/Windows.
+\`\`\`bash
+# dev
+command
+# prod
+command
+\`\`\`
 
 ## Project Structure
 
-Use the structure tree provided.
+```
+tree here
+```
 
 ## Contributing
 
-Write a proper guide (3-5 paragraphs):
-1. How to fork and setup locally
-2. Code style guidelines (based on detected language)
-3. Testing instructions (if tests detected)
-4. Pull Request process
+Short guide (3-5 steps).
 
 ## License
 
-If the actual LICENSE file content is provided below, read it and write a 2-3 sentence human summary. Example: "This project is licensed under the MIT License — you are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the software."
-
-IMPORTANT: Generate at least 200 lines of markdown. Make every section count.
+If LICENSE file content is provided, write a 2-sentence human summary. Otherwise use the detected license name.
 PROMPT;
 
 
