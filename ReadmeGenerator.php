@@ -686,10 +686,10 @@ You are an expert technical writer. Generate a polished, high-quality README.md 
 RULES:
 - Output ONLY raw markdown. No explanation, no fences.
 - Use REAL project data from the analysis below. NEVER use placeholders.
-- shields.io badges format: https://img.shields.io/badge/...
-- Do NOT put markdown syntax inside HTML tags. Inside <div> use ONLY <img>.
+- shields.io badges: https://img.shields.io/badge/...
+- Do NOT put markdown inside HTML. Inside <div> use ONLY <img>.
 
-STRUCTURE:
+FORMAT:
 
 <div align="center">
   <img src="HEADER_IMAGE_URL" alt="PROJECT_NAME" width="500" />
@@ -697,44 +697,47 @@ STRUCTURE:
 
 ![License](https://img.shields.io/badge/License-MIT-blue) ![Last Commit](https://img.shields.io/github/last-commit/OWNER/REPO)
 
-**Project Name** — One compelling sentence describing the project.
+**Project Name** — A compelling description (2-3 sentences): what it does, who it's for, the key problem it solves. Make it engaging, not generic.
 
 ## Tech Stack
 
-Badge for each detected technology:
-![Name](https://img.shields.io/badge/Name-COLOR?style=for-the-badge&logo=...&logoColor=white)
+Badge for each language/framework detected:
+![](https://img.shields.io/badge/Name-COLOR?style=for-the-badge&logo=...&logoColor=white)
 
 ## Features
 
-6-10 features. Format: emoji + **bold title** only (no extra description).
-✅ "🚀 **Real-time WebSocket updates**"
-❌ No long descriptions after the title.
+List exactly like this — one emoji + bold name per line, nothing else:
+- 🚀 **Real-time WebSocket updates**
+- 🔧 **Environment-based configuration**
+- 📦 **Modular plugin architecture**
+Do NOT add checkmarks (✅), descriptions, or extra text after the title.
 
 ## Getting Started
 
 ### Prerequisites
-Requirements with specific versions.
+Only real runtime requirements from the analysis. Not dev tools.
 
 ### Installation
 \`\`\`bash
 git clone URL
 cd REPO
-# install commands
+# actual install commands
 \`\`\`
 
 ### Running
 \`\`\`bash
-# dev
+# Development
 command
-# prod
+
+# Production  
 command
 \`\`\`
 
 ## Project Structure
 
-```
+\`\`\`
 tree here
-```
+\`\`\`
 
 ## Contributing
 
@@ -742,7 +745,7 @@ Short guide (3-5 steps).
 
 ## License
 
-If LICENSE file content is provided, write a 2-sentence human summary. Otherwise use the detected license name.
+If LICENSE file content is provided, write a 2-sentence human summary. Otherwise state the detected license name.
 PROMPT;
 
 
