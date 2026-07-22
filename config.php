@@ -37,7 +37,7 @@ return [
         'model' => 'groq/compound',
         'max_tokens' => 8192,
         'temperature' => 0.7,
-        'max_source_files' => 8,
-        'max_source_chars' => 5000,
+        'max_source_files' => 4,
+        'max_source_chars' => 2000,
     ],
 ];

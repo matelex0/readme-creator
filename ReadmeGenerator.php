@@ -526,13 +526,14 @@ class ReadmeGenerator {
             $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
             $content = @file_get_contents($file->getPathname());
             if ($content !== false) {
-                $truncated = substr($content, 0, 3000);
+                $truncated = substr($content, 0, 1200);
                 $result[$relativePath] = $truncated;
                 $totalChars += strlen($truncated);
             }
+            if (count($result) >= $maxFiles || $totalChars >= $maxChars) break;
         }
 
-        if ($totalChars < $maxChars) {
+        if ($totalChars < $maxChars && count($result) < $maxFiles) {
             foreach ($otherFiles as $file) {
                 $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
                 if (isset($result[$relativePath])) continue;
@@ -540,7 +541,7 @@ class ReadmeGenerator {
                 $content = @file_get_contents($file->getPathname());
                 if ($content === false) continue;
 
-                $truncated = substr($content, 0, 2000);
+                $truncated = substr($content, 0, 800);
                 $result[$relativePath] = $truncated;
                 $totalChars += strlen($truncated);
 
