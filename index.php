@@ -75,6 +75,7 @@ if (($ownerName && $repoName) && !$error) {
 
             if ($useAI) {
                 try {
+                    set_time_limit(0);
                     $sourceContent = $generator->collectSourceContent($tempPath);
                     $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent);
                 } catch (Exception $e) {

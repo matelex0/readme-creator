@@ -552,9 +552,13 @@ class ReadmeGenerator {
     }
 
     public function callGroq($messages) {
+        if (!function_exists('curl_init')) {
+            throw new Exception('cURL extension is not installed. Enable it in PHP to use AI generation.');
+        }
+
         $apiKey = $this->config['groq']['api_key'] ?? '';
         if (empty($apiKey) || $apiKey === 'YOUR_GROQ_API_KEY_HERE') {
-            throw new Exception('Groq API key not configured. Set it in config.php.');
+            throw new Exception('Groq API key not configured. Set it in .env file.');
         }
 
         $url = 'https://api.groq.com/openai/v1/chat/completions';
@@ -644,6 +648,7 @@ class ReadmeGenerator {
     }
 
     public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = []) {
+        set_time_limit(0);
         $totalBytes = array_sum($data['languages']);
         $langDetails = '';
         if ($totalBytes > 0) {
