@@ -48,6 +48,7 @@
 ## Features
 
 - 🔍 **Automatic Analysis**: Scans your repository to detect programming languages, frameworks, and tools.
+- 🤖 **AI-Powered Generation**: Optional AI generation via Groq for richer, more accurate READMEs.
 - 📊 **Language Statistics**: Generates language distribution badges automatically.
 - 🌳 **Project Structure**: Visualizes your project's file hierarchy in a clean tree format.
 - 🎨 **Customizable**: Supports custom header images via Socialify and manual license selection.
@@ -62,6 +63,7 @@
 To run this project, you need:
 - **PHP 8.0** or higher
 - **Git** installed and accessible from the command line
+- PHP **cURL** extension (`php-curl`)
 - PHP `exec()` function enabled (for running Git commands)
 
 ### Installation
@@ -79,20 +81,32 @@ cd readme-creator
 chmod 755 .
 ```
 
+4. (Optional) Set up AI generation by creating a `.env` file:
+```bash
+echo 'GROQ_API_KEY=your_groq_api_key_here' > .env
+```
+Get an API key at [console.groq.com](https://console.groq.com).
+
 ## Usage
 
 1. Open the application in your web browser (e.g., `http://localhost/readme-creator`).
 2. Enter a GitHub repository URL (e.g., `https://github.com/username/repo`) or use the short format `username/repo` in the URL path.
-3. Click **Generate**.
-4. Review the generated README, then click **Copy Markdown** or **Download**.
+3. Check **Generate with AI** for AI-enhanced README generation (requires Groq API key).
+4. Click **Generate**.
+5. Review the generated README, then click **Copy Markdown** or **Download**.
+
+> **Tip:** Replace `github.com` with `readme.matelex.it` in any repo URL to auto-generate instantly with AI (e.g., `readme.matelex.it/username/repo`).
 
 ## Project Structure
 
 ```text
-├── config.php           # Configuration settings (temp dir, ignored files)
+├── config.php           # Configuration settings (temp dir, ignored files, Groq)
 ├── index.php            # Main application entry point and UI
-├── ReadmeGenerator.php  # Core logic for repo analysis and markdown generation
+├── ReadmeGenerator.php  # Core logic for repo analysis, AI, and markdown generation
 ├── style.css            # Styling for the web interface
+├── .env.example         # Environment template (copy to .env and add your Groq API key)
+├── .gitignore           # Git ignore rules
+├── .htaccess            # Apache rewrite rules
 └── README.md            # Project documentation
 ```
 
