@@ -71,7 +71,7 @@ if (($ownerName && $repoName) && !$error) {
                 $analysis['license'] = $manualLicense;
             }
 
-            $useAI = isset($_POST['use_ai']) && $_POST['use_ai'] === '1';
+            $useAI = (isset($autoMode) && $autoMode) || (isset($_POST['use_ai']) && $_POST['use_ai'] === '1');
 
             if ($useAI) {
                 try {

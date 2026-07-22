@@ -526,7 +526,7 @@ class ReadmeGenerator {
             $relativePath = str_replace($path . DIRECTORY_SEPARATOR, '', $file->getPathname());
             $content = @file_get_contents($file->getPathname());
             if ($content !== false) {
-                $truncated = mb_substr($content, 0, 3000);
+                $truncated = substr($content, 0, 3000);
                 $result[$relativePath] = $truncated;
                 $totalChars += strlen($truncated);
             }
@@ -540,7 +540,7 @@ class ReadmeGenerator {
                 $content = @file_get_contents($file->getPathname());
                 if ($content === false) continue;
 
-                $truncated = mb_substr($content, 0, 2000);
+                $truncated = substr($content, 0, 2000);
                 $result[$relativePath] = $truncated;
                 $totalChars += strlen($truncated);
 
@@ -672,7 +672,7 @@ class ReadmeGenerator {
             if ($currentChars + strlen($block) > 8000) {
                 $remaining = 8000 - $currentChars;
                 if ($remaining > 100) {
-                    $sourceBlock .= mb_substr($block, 0, $remaining) . "\n";
+                    $sourceBlock .= substr($block, 0, $remaining) . "\n";
                 }
                 break;
             }
