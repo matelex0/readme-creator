@@ -108,6 +108,27 @@ if (($ownerName && $repoName) && !$error) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <script>
+        document.querySelector('form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const useAI = document.querySelector('[name="use_ai"]')?.checked;
+            document.querySelector('.loading-text').textContent = useAI
+                ? 'Generating with AI... This may take a moment.'
+                : 'Analyzing Repository...';
+            document.querySelector('.loading-overlay').classList.remove('hidden');
+
+            const formData = new FormData(this);
+            try {
+                const response = await fetch(this.action, { method: 'POST', body: formData });
+                const html = await response.text();
+                document.open();
+                document.write(html);
+                document.close();
+            } catch (err) {
+                alert('Request failed. Please try again.');
+                document.querySelector('.loading-overlay').classList.add('hidden');
+            }
+        });
+
         function copyMarkdown() {
             const textarea = document.querySelector('.code-editor');
             textarea.select();
@@ -116,10 +137,6 @@ if (($ownerName && $repoName) && !$error) {
             const originalText = btn.innerText;
             btn.innerText = 'Copied!';
             setTimeout(() => btn.innerText = originalText, 2000);
-        }
-
-        function showLoading() {
-            document.querySelector('.loading-overlay').classList.remove('hidden');
         }
 
         function switchTab(tab) {
@@ -155,7 +172,7 @@ if (($ownerName && $repoName) && !$error) {
 
             <main>
                 <section class="input-wrapper">
-                    <form method="POST" action="/" onsubmit="showLoading()">
+                    <form method="POST" action="/">
                         <div class="input-group-vertical">
                             <div class="input-wrapper">
                                 <input type="text" name="repo_url" placeholder="https://github.com/username/repository" required value="<?php echo isset($_POST['repo_url']) ? htmlspecialchars($_POST['repo_url']) : ''; ?>">
