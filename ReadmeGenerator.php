@@ -915,12 +915,16 @@ PROMPT;
         $userPrompt .= "\n## Structure\n```\n{$structure}```\n\n"
             . "## Header Image URL\n{$imageUrl}\n\n"
             . ($sourceBlock ? "## Source Files Context\n{$sourceBlock}" : "")
-            . "\n---\nGenerate the complete README.md in {$langName}. Output ONLY the markdown.";
+            . "\n---\nGenerate the complete README.md in {$langName}. Output ONLY the markdown.\n"
+            . "\n---\nAt the very end of the README, add this line EXACTLY (replace OWNER/REPO with the actual values):\n<p align=\"center\">Created with <a href=\"https://readme.matelex.it\">readme.matelex.it</a> — <a href=\"https://github.com/OWNER/REPO\">Open Source</a></p>";
 
-        return $this->callAI([
+        $readme = $this->callAI([
             ['role' => 'system', 'content' => $systemPrompt],
             ['role' => 'user', 'content' => $userPrompt],
         ]);
+
+        $credits = "\n\n---\n\n<p align=\"center\">Created with <a href=\"https://readme.matelex.it\">readme.matelex.it</a> \u{2014} <a href=\"https://github.com/matelex0/readme-creator\">Open Source</a></p>\n";
+        return $readme . $credits;
     }
 
     public function generateMarkdown($owner, $repo, $data, $url, $customImage = null, $language = 'en') {
@@ -1421,7 +1425,10 @@ PROMPT;
         $md .= $t('contributing_desc') . "\n\n";
 
         $md .= "## " . $t('license') . "\n\n";
-        $md .= $data['license'] . "\n";
+        $md .= $data['license'] . "\n\n";
+
+        $md .= "---\n\n";
+        $md .= "<p align=\"center\">Created with <a href=\"https://readme.matelex.it\">readme.matelex.it</a> \u{2014} <a href=\"https://github.com/matelex0/readme-creator\">Open Source</a></p>\n";
 
         return $md;
     }
@@ -1475,8 +1482,9 @@ PROMPT;
             $html = str_replace($id, $tag, $html);
         }
         foreach ($otherHtmlTags as $id => $tag) {
+            $tagLower = strtolower($tag);
             $allowed = ['<br>', '<br/>', '<hr>', '<hr/>', '<details>', '</details>', '<summary>', '</summary>', '<kbd>', '</kbd>', '<sub>', '</sub>', '<sup>', '</sup>', '<b>', '</b>', '<i>', '</i>', '<em>', '</em>', '<strong>', '</strong>'];
-            if (in_array(strtolower($tag), $allowed)) {
+            if (in_array($tagLower, $allowed) || strpos($tagLower, '<a ') === 0 || $tagLower === '</a>') {
                 $html = str_replace($id, $tag, $html);
             } else {
                 $html = str_replace($id, htmlspecialchars($tag), $html);
