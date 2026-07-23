@@ -1,9 +1,5 @@
 <?php
 
-// Made by alex1dev - https://alex1dev.xyz
-// File index.php - Main file
-
-require_once 'config.php';
 require_once 'ReadmeGenerator.php';
 
 $config = require 'config.php';
@@ -30,6 +26,7 @@ $parts = array_values(array_filter(explode('/', $requestPath), static function (
     return $part !== '';
 }));
 
+$autoMode = false;
 if (count($parts) >= 2 && $parts[0] !== 'index.php') {
     $ownerName = rawurldecode($parts[0]);
     $repoName = rawurldecode($parts[1]);
@@ -51,7 +48,7 @@ if (count($parts) >= 2 && $parts[0] !== 'index.php') {
     }
 }
 
-if (($ownerName && $repoName) && !$error) {
+if (($ownerName && $repoName) && !$error && !$autoMode) {
     try {
         $ownerName = $generator->sanitize($ownerName);
         $repoName = $generator->sanitize($repoName);
@@ -71,14 +68,13 @@ if (($ownerName && $repoName) && !$error) {
                 $analysis['license'] = $manualLicense;
             }
 
-            $useAI = (isset($autoMode) && $autoMode) || (isset($_POST['use_ai']) && $_POST['use_ai'] === '1');
-            $language = isset($_POST['language']) && $_POST['language'] === 'it' ? 'it' : 'en';
+            $useAI = isset($_POST['use_ai']) && $_POST['use_ai'] === '1';
 
             if ($useAI) {
                 try {
                     set_time_limit(0);
                     $sourceContent = $generator->collectSourceContent($tempPath);
-                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent, $language);
+                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent);
                 } catch (Exception $e) {
                     $aiError = $e->getMessage();
                     $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
@@ -110,46 +106,86 @@ if (($ownerName && $repoName) && !$error) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            document.querySelector('form').addEventListener('submit', function(e) {
-                var useAI = document.querySelector('[name="use_ai"]')?.checked;
-                document.querySelector('.loading-text').textContent = useAI
-                    ? 'Generating with AI... This may take a moment.'
-                    : 'Analyzing Repository...';
-                document.querySelector('.loading-overlay').classList.remove('hidden');
-            });
-
-            var aiCheckbox = document.querySelector('[name="use_ai"]');
-            if (aiCheckbox) {
-                aiCheckbox.addEventListener('change', function() {
-                    var wrapper = document.getElementById('lang-wrapper');
-                    if (wrapper) wrapper.style.display = this.checked ? '' : 'none';
+            var form = document.querySelector('form');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    var useAI = document.querySelector('[name="use_ai"]')?.checked;
+                    document.querySelector('.loading-text').textContent = useAI
+                        ? 'Generating with AI... This may take a moment.'
+                        : 'Analyzing Repository...';
+                    document.querySelector('.loading-overlay').classList.remove('hidden');
                 });
             }
+
+            <?php if ($autoMode && $ownerName && $repoName): ?>
+            generateAsync('<?php echo addslashes($ownerName); ?>', '<?php echo addslashes($repoName); ?>');
+            <?php endif; ?>
         });
 
+        function generateAsync(owner, repo) {
+            var overlay = document.querySelector('.loading-overlay');
+            var results = document.getElementById('async-results');
+            overlay.classList.remove('hidden');
+            document.querySelector('.loading-text').textContent = 'Generating with AI... This may take a moment.';
+
+            fetch('/api.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'owner=' + encodeURIComponent(owner) + '&repo=' + encodeURIComponent(repo)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                overlay.classList.add('hidden');
+                if (results) {
+                    if (data.error) {
+                        results.innerHTML = '<div class="card" style="margin-top:20px;border-color:var(--mac-red);color:var(--mac-red);text-align:center;">' + escapeHtml(data.error) + '</div>';
+                    } else {
+                        results.innerHTML = data.html;
+                        results.classList.remove('hidden');
+                    }
+                }
+            })
+            .catch(function(err) {
+                overlay.classList.add('hidden');
+                if (results) {
+                    results.innerHTML = '<div class="card" style="margin-top:20px;border-color:var(--mac-red);color:var(--mac-red);text-align:center;">Error: ' + escapeHtml(err.message) + '</div>';
+                }
+            });
+        }
+
         function copyMarkdown() {
-            const textarea = document.querySelector('.code-editor');
+            var textarea = document.querySelector('.code-editor');
+            if (!textarea) return;
             textarea.select();
             document.execCommand('copy');
-            const btn = document.getElementById('copyBtn');
-            const originalText = btn.innerText;
-            btn.innerText = 'Copied!';
-            setTimeout(() => btn.innerText = originalText, 2000);
+            var btn = document.getElementById('copyBtn') || document.getElementById('copyBtnMobile');
+            if (btn) {
+                var originalText = btn.innerText;
+                btn.innerText = 'Copied!';
+                setTimeout(function() { btn.innerText = originalText; }, 2000);
+            }
         }
 
         function switchTab(tab) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+            var btn = document.querySelector('[data-tab="' + tab + '"]');
+            if (btn) btn.classList.add('active');
+            var content = document.getElementById(tab + '-content');
+            if (content) content.classList.add('active');
+        }
 
-            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-            document.getElementById(`${tab}-content`).classList.add('active');
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
         }
     </script>
 </head>
 <body>
-    <div class="loading-overlay hidden">
+    <div class="loading-overlay <?php echo ($autoMode || $error) ? '' : 'hidden'; ?>">
         <div class="loading-spinner"></div>
-        <div class="loading-text">Analyzing Repository...</div>
+        <div class="loading-text"><?php echo $autoMode ? 'Generating with AI...' : ($error ? htmlspecialchars($error) : 'Analyzing Repository...'); ?></div>
     </div>
 
     <div class="mac-window">
@@ -191,18 +227,12 @@ if (($ownerName && $repoName) && !$error) {
                                 <input type="checkbox" name="use_ai" value="1" <?php echo isset($_POST['use_ai']) ? 'checked' : ''; ?>>
                                 <span class="checkbox-text">Generate with AI <span class="badge-ai">AI</span></span>
                             </label>
-                            <div class="select-wrapper" id="lang-wrapper" style="<?php echo isset($_POST['use_ai']) ? '' : 'display:none;'; ?>">
-                                <select name="language">
-                                    <option value="en" <?php echo (!isset($_POST['language']) || $_POST['language'] === 'en') ? 'selected' : ''; ?>>English</option>
-                                    <option value="it" <?php echo (isset($_POST['language']) && $_POST['language'] === 'it') ? 'selected' : ''; ?>>Italiano</option>
-                                </select>
-                            </div>
                             <button type="submit" class="btn primary btn-block">Generate README</button>
                         </div>
                     </form>
                 </section>
 
-                <?php if ($error): ?>
+                <?php if ($error && !$autoMode): ?>
                     <div class="card" style="margin-top: 20px; border-color: var(--mac-red); color: var(--mac-red); text-align: center;">
                         <?php echo htmlspecialchars($error); ?>
                     </div>
@@ -214,6 +244,7 @@ if (($ownerName && $repoName) && !$error) {
                     </div>
                 <?php endif; ?>
 
+                <div id="async-results" class="<?php echo ($autoMode && !$readmeContent) ? 'hidden' : ''; ?>">
                 <?php if ($readmeContent): ?>
                     <div class="results-container">
                         <div class="split-view">
@@ -266,6 +297,7 @@ if (($ownerName && $repoName) && !$error) {
                         </div>
                     </div>
                 <?php endif; ?>
+                </div>
             </main>
         </div>
     </div>

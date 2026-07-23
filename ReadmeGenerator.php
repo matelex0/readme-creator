@@ -85,7 +85,7 @@ class ReadmeGenerator {
 
     public function cloneRepo($url) {
         if (!file_exists($this->config['temp_dir'])) {
-            mkdir($this->config['temp_dir'], 0777, true);
+            mkdir($this->config['temp_dir'], 0700, true);
         }
 
         $folderName = uniqid('repo_');
@@ -228,7 +228,7 @@ class ReadmeGenerator {
             if ($filename === 'pom.xml') $data['frameworks']['Maven'] = true;
             if ($filename === 'build.gradle') $data['frameworks']['Gradle'] = true;
             if ($filename === 'Dockerfile' || $filename === 'docker-compose.yml') $data['has_docker'] = true;
-            if (strpos($filename, 'test') !== false) $data['has_tests'] = true;
+            if (preg_match('/\.test\.|\.spec\.|\\_test\\.|-test\\./', $filename) || $firstDir === 'tests' || $firstDir === '__tests__' || $firstDir === 'spec') $data['has_tests'] = true;
             if (stripos($filename, 'license') !== false && $data['license'] === 'Not specified') $data['license'] = 'See LICENSE file';
             if ($filename === '.env.example' || $filename === '.env') $data['has_env'] = true;
             if ($filename === 'Makefile') $data['has_makefile'] = true;
@@ -469,8 +469,8 @@ class ReadmeGenerator {
     }
 
     public function collectSourceContent($path) {
-        $maxFiles = $this->config['groq']['max_source_files'] ?? 15;
-        $maxChars = $this->config['groq']['max_source_chars'] ?? 8000;
+        $maxFiles = $this->config['ai']['max_source_files'] ?? 4;
+        $maxChars = $this->config['ai']['max_source_chars'] ?? 4000;
 
         $priorityNames = [
             'package.json', 'composer.json', 'Cargo.toml', 'requirements.txt',
@@ -553,24 +553,34 @@ class ReadmeGenerator {
         return $result;
     }
 
-    public function callGroq($messages) {
+    public function callAI($messages, $provider = null) {
         if (!function_exists('curl_init')) {
             throw new Exception('cURL extension is not installed. Enable it in PHP to use AI generation.');
         }
 
-        $apiKey = $this->config['groq']['api_key'] ?? '';
-        if (empty($apiKey) || $apiKey === 'YOUR_GROQ_API_KEY_HERE') {
-            throw new Exception('Groq API key not configured. Set it in .env file.');
+        $providers = $this->config['ai']['providers'] ?? [];
+        $providerName = $provider ?: ($this->config['ai']['default_provider'] ?? 'cerebras');
+
+        if (!isset($providers[$providerName])) {
+            throw new Exception("AI provider '$providerName' not configured.");
         }
 
-        $url = 'https://api.groq.com/openai/v1/chat/completions';
-        $maxRetries = 5;
+        $cfg = $providers[$providerName];
+        $apiKey = $cfg['api_key'] ?? '';
+        $label = ucfirst($providerName);
+
+        if (empty($apiKey)) {
+            throw new Exception(strtoupper($providerName) . " API key not configured. Set it in .env file ({$providerName}_api_key).");
+        }
+
+        $url = $cfg['endpoint'];
+        $maxRetries = 3;
 
         $payload = [
-            'model' => $this->config['groq']['model'] ?? 'llama-3.1-70b-versatile',
+            'model' => $cfg['model'],
             'messages' => $messages,
-            'max_tokens' => $this->config['groq']['max_tokens'] ?? 8000,
-            'temperature' => $this->config['groq']['temperature'] ?? 0.7,
+            'max_tokens' => $cfg['max_tokens'] ?? 8192,
+            'temperature' => $cfg['temperature'] ?? 0.7,
         ];
 
         $lastError = '';
@@ -586,7 +596,7 @@ class ReadmeGenerator {
                 ],
                 CURLOPT_POSTFIELDS => json_encode($payload),
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 120,
+                CURLOPT_TIMEOUT => 180,
                 CURLOPT_SSL_VERIFYPEER => true,
                 CURLOPT_HEADER => true,
             ]);
@@ -599,11 +609,10 @@ class ReadmeGenerator {
             if ($response === false) {
                 curl_close($ch);
                 if ($attempt >= $maxRetries) {
-                    throw new Exception('Groq API connection error after ' . ($maxRetries + 1) . ' attempts: ' . $curlError);
+                    throw new Exception("{$label} API connection error after " . ($maxRetries + 1) . " attempts: {$curlError}");
                 }
                 $lastError = $curlError;
-                $wait = pow(2, $attempt + 1);
-                sleep($wait);
+                sleep(pow(2, $attempt + 1));
                 continue;
             }
 
@@ -614,7 +623,7 @@ class ReadmeGenerator {
             if ($httpCode === 200) {
                 $data = json_decode($body, true);
                 if (!isset($data['choices'][0]['message']['content'])) {
-                    throw new Exception('Groq API returned an empty response. The model may have been filtered or blocked.');
+                    throw new Exception("{$label} API returned an empty response.");
                 }
                 return $data['choices'][0]['message']['content'];
             }
@@ -625,30 +634,25 @@ class ReadmeGenerator {
             if ($httpCode === 429) {
                 preg_match('/Retry-After:\s*(\d+)/i', $headers, $matches);
                 $retryAfter = isset($matches[1]) ? (int)$matches[1] : pow(2, $attempt + 1);
-
                 if ($attempt >= $maxRetries) {
-                    throw new Exception('Groq API rate limit exceeded after ' . ($maxRetries + 1) . ' attempts: ' . $errorMsg . '. Try again later.');
+                    throw new Exception("{$label} API rate limit exceeded: {$errorMsg}");
                 }
-
-                $lastError = 'Rate limited (HTTP 429): ' . $errorMsg . '. Retrying in ' . $retryAfter . 's...';
+                $lastError = "Rate limited, retrying in {$retryAfter}s...";
                 sleep($retryAfter);
                 continue;
             }
 
             if ($httpCode === 401) {
-                throw new Exception('Groq API authentication failed (HTTP 401). Check your API key in config.php.');
+                throw new Exception("{$label} API authentication failed (HTTP 401). Check your API key.");
             }
 
-            if ($httpCode === 400) {
-                throw new Exception('Groq API bad request (HTTP 400): ' . $errorMsg . '. Try a different model or reduce the input size.');
-            }
-
-            throw new Exception('Groq API error (HTTP ' . $httpCode . '): ' . $errorMsg);
+            throw new Exception("{$label} API error (HTTP {$httpCode}): {$errorMsg}");
         }
 
-        throw new Exception('Groq API request failed after ' . ($maxRetries + 1) . ' attempts. ' . $lastError);
+        throw new Exception("{$label} API request failed after " . ($maxRetries + 1) . " attempts. {$lastError}");
     }
-    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = [], $language = 'en') {
+
+    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = []) {
         set_time_limit(0);
 
         $totalBytes = array_sum($data['languages']);
@@ -671,81 +675,198 @@ class ReadmeGenerator {
         $currentChars = 0;
         foreach ($sourceContent as $filePath => $content) {
             $block = "### {$filePath}\n```\n{$content}\n```\n\n";
-            if ($currentChars + strlen($block) > $this->config['groq']['max_source_chars']) break;
+            if ($currentChars + strlen($block) > $this->config['ai']['max_source_chars']) break;
             $sourceBlock .= $block;
             $currentChars += strlen($block);
         }
 
         $imageUrl = $customImage ?: $this->getSocialifyUrl($owner, $repo);
 
-        $lang = ($language === 'it') ? 'Italian' : 'English';
-
         $systemPrompt = <<<PROMPT
-You are an expert technical writer. Generate a polished, high-quality README.md in {$lang} for a GitHub project.
+You are an expert technical writer. Generate a polished, professional README.md in English that follows this exact structure. The output must be comprehensive, well-organized, and developer-friendly.
 
-RULES:
-- Output ONLY raw markdown. No explanation, no fences.
-- Use REAL project data from the analysis below. NEVER use placeholders.
-- shields.io badges: https://img.shields.io/badge/...
-- Do NOT put markdown inside HTML. Inside <div> use ONLY <img>.
+## CORE RULES
+1. Output ONLY raw markdown — no code fences around the output, no explanations, no comments.
+2. Use REAL data from the analysis. NEVER invent features, commands, or dependencies.
+3. Do NOT put markdown syntax inside HTML tags. Inside <div> use only <img>.
+4. Every shields.io badge must use a realistic color. Prefer `style=for-the-badge` for tech badges.
+5. Write with authority and clarity. Assume the reader is a developer evaluating the project.
 
-FORMAT:
+## EXACT OUTPUT TEMPLATE
 
+### 1. Header
+\`\`\`markdown
 <div align="center">
-  <img src="HEADER_IMAGE_URL" alt="PROJECT_NAME" width="500" />
+  <img src="HEADER_IMAGE_URL" alt="PROJECT" width="500" />
 </div>
+\`\`\`
 
-![License](https://img.shields.io/badge/License-MIT-blue) ![Last Commit](https://img.shields.io/github/last-commit/OWNER/REPO)
+### 2. Badge Row (inside div align="center")
+Group all badges in one `<div align="center">` block. Include:
+- License badge: `https://img.shields.io/badge/license-NAME-blue.svg?style=flat-square`
+- Top Language: `https://img.shields.io/github/languages/top/OWNER/REPO?style=flat-square`
+- Repo Size: `https://img.shields.io/github/repo-size/OWNER/REPO?style=flat-square`
+- Last Commit: `https://img.shields.io/github/last-commit/OWNER/REPO?style=flat-square`
+- Stars, Issues, Forks if relevant
+Then add a `<p align="center"><em>Short tagline (one sentence)</em></p>` followed by shields.io badges for contributors, forks, and stars in another `<p align="center">`:
+\`\`\`markdown
+<p align="center">
+  <a href="https://github.com/OWNER/REPO/graphs/contributors">
+    <img src="https://img.shields.io/github/contributors/OWNER/REPO?style=flat-square" alt="contributors" />
+  </a>
+  <a href="https://github.com/OWNER/REPO/network/members">
+    <img src="https://img.shields.io/github/forks/OWNER/REPO?style=flat-square" alt="forks" />
+  </a>
+  <a href="https://github.com/OWNER/REPO/stargazers">
+    <img src="https://img.shields.io/github/stars/OWNER/REPO?style=flat-square" alt="stars" />
+  </a>
+</p>
+\`\`\`
+Close the div.
 
-**Project Name** — A compelling description (2-3 sentences): what it does, who it's for, the key problem it solves. Make it engaging, not generic.
+### 3. Separator
+\`\`\`markdown
+---
+\`\`\`
 
-## Tech Stack
+### 4. Table of Contents
+Must include all sections present in the README. Example:
+\`\`\`markdown
+## Table of Contents
+- [Overview](#overview)
+- [Languages](#languages)
+- [Features](#features)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+\`\`\`
 
-Badge for each language/framework detected:
-![](https://img.shields.io/badge/Name-COLOR?style=for-the-badge&logo=...&logoColor=white)
+### 5. Overview
+**Project Name** — A detailed 3-4 sentence paragraph: what the project does, the problem it solves, who it's for, and its key value proposition. Be specific and compelling.
 
-## Features
+### 6. Languages
+One badge per detected language using \`style=for-the-badge\`. Use the accurate logo and color.
 
-List exactly like this — one emoji + bold name per line, nothing else:
-- 🚀 **Real-time WebSocket updates**
-- 🔧 **Environment-based configuration**
-- 📦 **Modular plugin architecture**
-Do NOT add checkmarks (✅), descriptions, or extra text after the title.
+### 7. Features
+List features with an emoji, bold title, and a short description. Like this:
+\`\`\`markdown
+- 🔍 **Automatic Analysis**: Scans your repository to detect programming languages, frameworks, and tools.
+- 🤖 **AI-Powered Generation**: Optional AI generation for richer, more accurate READMEs.
+- 📊 **Language Statistics**: Generates language distribution badges automatically.
+\`\`\`
+Each feature must have a real description after the colon. Never use just a bold title without explanation.
 
-## Getting Started
-
-### Prerequisites
-Only real runtime requirements from the analysis. Not dev tools.
-
-### Installation
+### 8. Getting Started
+#### Prerequisites
+Bullet list of actual runtime requirements from the analysis. Include versions if detected.
+#### Installation
+Numbered steps. Start with clone, then add real install commands from the analysis.
+\`\`\`markdown
+1. Clone the repository:
 \`\`\`bash
 git clone URL
 cd REPO
-# actual install commands
 \`\`\`
-
-### Running
+2. (next step from analysis)
 \`\`\`bash
-# Development
-command
-
-# Production  
 command
 \`\`\`
-
-## Project Structure
-
-\`\`\`
-tree here
 \`\`\`
 
-## Contributing
+### 9. Usage
+Numbered steps explaining how to use the project. Be specific with commands and examples.
+\`\`\`markdown
+1. Step one — what to do.
+2. Step two — what to do.
+> **Tip:** A helpful tip if applicable.
+\`\`\`
 
-Short guide (3-5 steps).
+### 10. Scripts (if package.json or composer.json scripts exist)
+If the source context shows a scripts section in package.json or composer.json, list available scripts:
+\`\`\`bash
+npm run dev      # Start development server
+npm run build    # Build for production
+npm run test     # Run tests
+\`\`\`
 
-## License
+### 11. API Reference (if source context shows functions, endpoints, or a CLI)
+Document the main entry points with signatures, parameters, return values, and examples.
 
-If LICENSE file content is provided, write a 2-sentence human summary. Otherwise state the detected license name.
+### 12. Configuration (if .env or config files exist)
+If the project uses environment variables or config files, show how to configure:
+\`\`\`bash
+cp .env.example .env
+# Edit .env with your settings
+\`\`\`
+Then list key variables in a table:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| PORT | Server port | 3000 |
+
+### 13. Testing (if tests exist)
+If the analysis shows test files or test frameworks, show how to run tests:
+\`\`\`bash
+npm test
+# or
+python -m pytest
+\`\`\`
+
+### 14. Docker (if Docker detected)
+If Dockerfile or docker-compose.yml exists:
+\`\`\`bash
+docker build -t NAME .
+docker run -p 3000:3000 NAME
+\`\`\`
+
+### 15. Screenshots / Demo (if assets/ or screenshots/ directory exists)
+If the project has image assets, add a placeholder section for screenshots.
+Only include if assets/images are detected.
+
+### 16. Project Structure
+\`\`\`text
+tree from analysis
+\`\`\`
+After the tree, add a bullet list with brief descriptions of the key files:
+\`\`\`markdown
+- \`config.php\` — Configuration settings
+- \`index.php\` — Main entry point and UI
+- \`ReadmeGenerator.php\` — Core logic for analysis and generation
+\`\`\`
+
+### 17. Contributing
+Numbered steps:
+\`\`\`markdown
+Contributions are welcome! Please feel free to submit a Pull Request.
+1. Fork the project
+2. Create your feature branch (\`git checkout -b feature/AmazingFeature\`)
+3. Commit your changes (\`git commit -m 'Add some AmazingFeature'\`)
+4. Push to the branch (\`git push origin feature/AmazingFeature\`)
+5. Open a Pull Request
+\`\`\`
+
+### 18. License
+If LICENSE file content is available, write a 2-sentence human summary with a link. Otherwise state the detected license name with a badge and link.
+\`\`\`markdown
+Distributed under the MIT License. See \`LICENSE\` for more information.
+\`\`\`
+
+### 19. Acknowledgements (if applicable)
+Only include if the project has dependencies, credits, or third-party assets worth noting.
+\`\`\`markdown
+- [Library Name](https://...) — What it's used for
+- [Tool Name](https://...) — What it's used for
+\`\`\`
+
+### 20. Footer
+\`\`\`markdown
+---
+Created by **OWNER**
+\`\`\`
+
 PROMPT;
 
 
@@ -769,9 +890,9 @@ PROMPT;
         $userPrompt .= "\n## Structure\n```\n{$structure}```\n\n"
             . "## Header Image URL\n{$imageUrl}\n\n"
             . ($sourceBlock ? "## Source Files Context\n{$sourceBlock}" : "")
-            . "\n---\nGenerate the complete README.md in {$lang}. Output ONLY the markdown.";
+            . "\n---\nGenerate the complete README.md in English. Output ONLY the markdown.";
 
-        return $this->callGroq([
+        return $this->callAI([
             ['role' => 'system', 'content' => $systemPrompt],
             ['role' => 'user', 'content' => $userPrompt],
         ]);
@@ -783,7 +904,7 @@ PROMPT;
 
         $md = "<div align=\"center\">\n";
         if ($customImage) {
-            $md .= "  <img src=\"" . $customImage . "\" alt=\"" . $repo . "\" width=\"500\" />\n";
+            $md .= "  <img src=\"" . htmlspecialchars($customImage, ENT_QUOTES) . "\" alt=\"" . htmlspecialchars($repo, ENT_QUOTES) . "\" width=\"500\" />\n";
         } else {
             $md .= "  <img src=\"" . $this->getSocialifyUrl($owner, $repo) . "\" alt=\"" . $repo . "\" width=\"500\" />\n";
         }
@@ -960,6 +1081,13 @@ PROMPT;
             return $id;
         }, $markdown);
 
+        $otherHtmlTags = [];
+        $markdown = preg_replace_callback('/<[^>]+>/', function($matches) use (&$otherHtmlTags) {
+            $id = '###HTMLTAG' . count($otherHtmlTags) . '###';
+            $otherHtmlTags[$id] = $matches[0];
+            return $id;
+        }, $markdown);
+
         $html = htmlspecialchars($markdown);
 
         $html = str_replace(
@@ -968,6 +1096,9 @@ PROMPT;
             $html
         );
         foreach ($imgTags as $id => $tag) {
+            $html = str_replace($id, $tag, $html);
+        }
+        foreach ($otherHtmlTags as $id => $tag) {
             $html = str_replace($id, $tag, $html);
         }
 
@@ -1005,6 +1136,9 @@ PROMPT;
         foreach ($codeBlocks as $id => $block) {
             $html = str_replace($id, $block, $html);
         }
+
+        $html = preg_replace('/(<br><br>\s*)+<pre/', '<pre', $html);
+        $html = preg_replace('/<\/pre>(\s*<br><br>)+/', '</pre>', $html);
 
         return $html;
     }

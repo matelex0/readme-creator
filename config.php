@@ -1,8 +1,5 @@
 <?php
 
-// Made by alex1dev - https://alex1dev.xyz
-// File config.php - Main configuration file
-
 $envFile = __DIR__ . '/.env';
 if (file_exists($envFile)) {
     $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -32,12 +29,25 @@ return [
 
     'ignore_dirs' => ['.git', 'node_modules', 'vendor', 'dist', 'build', 'coverage', '.idea', '.vscode'],
 
-    'groq' => [
-        'api_key' => $_ENV['GROQ_API_KEY'] ?? getenv('GROQ_API_KEY') ?: 'YOUR_GROQ_API_KEY_HERE',
-        'model' => 'llama-3.3-70b-versatile',
-        'max_tokens' => 8192,
-        'temperature' => 0.7,
-        'max_source_files' => 2,
-        'max_source_chars' => 2000,
+    'ai' => [
+        'default_provider' => $_ENV['AI_PROVIDER'] ?? getenv('AI_PROVIDER') ?: 'cerebras',
+        'max_source_files' => 4,
+        'max_source_chars' => 4000,
+        'providers' => [
+            'groq' => [
+                'api_key' => $_ENV['GROQ_API_KEY'] ?? getenv('GROQ_API_KEY') ?: '',
+                'model' => 'llama-3.3-70b-versatile',
+                'max_tokens' => 8192,
+                'temperature' => 0.7,
+                'endpoint' => 'https://api.groq.com/openai/v1/chat/completions',
+            ],
+            'cerebras' => [
+                'api_key' => $_ENV['CEREBRAS_API_KEY'] ?? getenv('CEREBRAS_API_KEY') ?: '',
+                'model' => 'gpt-oss-120b',
+                'max_tokens' => 32768,
+                'temperature' => 0.7,
+                'endpoint' => 'https://api.cerebras.ai/v1/chat/completions',
+            ],
+        ],
     ],
 ];
