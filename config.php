@@ -29,6 +29,8 @@ return [
 
     'ignore_dirs' => ['.git', 'node_modules', 'vendor', 'dist', 'build', 'coverage', '.idea', '.vscode'],
 
+    'max_repo_size' => 250 * 1024 * 1024,
+
     'ai' => [
         'default_provider' => $_ENV['AI_PROVIDER'] ?? getenv('AI_PROVIDER') ?: 'cerebras',
         'max_source_files' => 4,
@@ -49,5 +51,11 @@ return [
                 'endpoint' => 'https://api.cerebras.ai/v1/chat/completions',
             ],
         ],
+    ],
+
+    'captcha' => [
+        'enabled' => filter_var($_ENV['CAPTCHA_ENABLED'] ?? getenv('CAPTCHA_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'site_key' => $_ENV['RECAPTCHA_SITE_KEY'] ?? getenv('RECAPTCHA_SITE_KEY') ?: '',
+        'secret_key' => $_ENV['RECAPTCHA_SECRET_KEY'] ?? getenv('RECAPTCHA_SECRET_KEY') ?: '',
     ],
 ];

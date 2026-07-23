@@ -1,6 +1,6 @@
 <?php
 
-require_once 'config.php';
+require_once 'functions.php';
 require_once 'ReadmeGenerator.php';
 
 header('Content-Type: application/json');
@@ -21,7 +21,18 @@ if (!$owner || !$repo) {
 }
 
 $config = require 'config.php';
+
+if (!verifyCaptcha($config)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Please complete the reCAPTCHA verification.']);
+    exit;
+}
+
 $generator = new ReadmeGenerator($config);
+
+register_shutdown_function(function() use ($generator) {
+    $generator->cleanup();
+});
 
 try {
     $owner = $generator->sanitize($owner);
@@ -33,12 +44,15 @@ try {
         throw new Exception("Repository not found on GitHub ($owner/$repo).");
     }
 
+    $generator->checkRepoSize($owner, $repo);
     set_time_limit(300);
     $tempPath = $generator->cloneRepo($repoUrl);
     $analysis = $generator->analyze($tempPath);
     $sourceContent = $generator->collectSourceContent($tempPath);
 
-    $readmeContent = $generator->generateMarkdownAI($owner, $repo, $analysis, $repoUrl, null, $sourceContent);
+    $language = $_POST['language'] ?? 'en';
+
+    $readmeContent = $generator->generateMarkdownAI($owner, $repo, $analysis, $repoUrl, null, $sourceContent, $language);
     $previewHtml = $generator->simpleMarkdownToHtml($readmeContent);
 
     $generator->cleanup();

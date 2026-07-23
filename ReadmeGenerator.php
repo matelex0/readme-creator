@@ -15,6 +15,23 @@ class ReadmeGenerator {
         return preg_replace('/[^a-zA-Z0-9_\-\.]/', '', $input);
     }
 
+    public function checkRepoSize($owner, $repo) {
+        $url = "https://api.github.com/repos/$owner/$repo";
+        $ctx = stream_context_create(['http' => [
+            'method' => 'GET',
+            'header' => "User-Agent: readme-creator\r\nAccept: application/vnd.github.v3+json",
+            'timeout' => 10,
+        ]]);
+        $response = @file_get_contents($url, false, $ctx);
+        if ($response === false) return;
+        $data = json_decode($response, true);
+        if (!isset($data['size'])) return;
+        $sizeBytes = $data['size'] * 1024;
+        if ($sizeBytes > $this->config['max_repo_size']) {
+            throw new Exception("Repository too large (" . round($sizeBytes / 1024 / 1024) . " MB). Maximum allowed is " . round($this->config['max_repo_size'] / 1024 / 1024) . " MB.");
+        }
+    }
+
     public function findRepoUrl($owner, $repo) {
         $apiRepoUrl = $this->findRepoWithGitHubApi($owner, $repo);
         if ($apiRepoUrl) {
@@ -652,8 +669,16 @@ class ReadmeGenerator {
         throw new Exception("{$label} API request failed after " . ($maxRetries + 1) . " attempts. {$lastError}");
     }
 
-    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = []) {
+    public function generateMarkdownAI($owner, $repo, $data, $url, $customImage = null, $sourceContent = [], $language = 'en') {
         set_time_limit(0);
+
+        $langMap = [
+            'en' => 'English', 'it' => 'Italian', 'es' => 'Spanish', 'fr' => 'French',
+            'de' => 'German', 'pt' => 'Portuguese', 'nl' => 'Dutch', 'ru' => 'Russian',
+            'zh' => 'Chinese (Simplified)', 'ja' => 'Japanese', 'ko' => 'Korean',
+            'ar' => 'Arabic', 'tr' => 'Turkish',
+        ];
+        $langName = $langMap[$language] ?? 'English';
 
         $totalBytes = array_sum($data['languages']);
         $langDetails = '';
@@ -683,7 +708,7 @@ class ReadmeGenerator {
         $imageUrl = $customImage ?: $this->getSocialifyUrl($owner, $repo);
 
         $systemPrompt = <<<PROMPT
-You are an expert technical writer. Generate a polished, professional README.md in English that follows this exact structure. The output must be comprehensive, well-organized, and developer-friendly.
+You are an expert technical writer. Generate a polished, professional README.md in {$langName} that follows this exact structure. The output must be comprehensive, well-organized, and developer-friendly.
 
 ## CORE RULES
 1. Output ONLY raw markdown — no code fences around the output, no explanations, no comments.
@@ -890,7 +915,7 @@ PROMPT;
         $userPrompt .= "\n## Structure\n```\n{$structure}```\n\n"
             . "## Header Image URL\n{$imageUrl}\n\n"
             . ($sourceBlock ? "## Source Files Context\n{$sourceBlock}" : "")
-            . "\n---\nGenerate the complete README.md in English. Output ONLY the markdown.";
+            . "\n---\nGenerate the complete README.md in {$langName}. Output ONLY the markdown.";
 
         return $this->callAI([
             ['role' => 'system', 'content' => $systemPrompt],
@@ -898,9 +923,353 @@ PROMPT;
         ]);
     }
 
-    public function generateMarkdown($owner, $repo, $data, $url, $customImage = null) {
+    public function generateMarkdown($owner, $repo, $data, $url, $customImage = null, $language = 'en') {
         $description = isset($data['description']) ? $data['description'] : "";
         $author = $data['author'] ? $data['author'] : $owner;
+
+        $t = function($key) use ($language) {
+            $texts = [
+                'en' => [
+                    'developed_with' => 'Developed with the software and tools below.',
+                    'table_of_contents' => 'Table of Contents',
+                    'languages' => 'Languages',
+                    'tech_stack' => 'Tech Stack',
+                    'features' => 'Features',
+                    'getting_started' => 'Getting Started',
+                    'prerequisites' => 'Prerequisites',
+                    'installation' => 'Installation',
+                    'clone_repo' => 'Clone the repository:',
+                    'configure_env' => 'Configure environment variables:',
+                    'install_npm' => 'Install NPM dependencies:',
+                    'install_composer' => 'Install PHP dependencies:',
+                    'install_pip' => 'Install Python requirements:',
+                    'start_docker' => 'Start with Docker:',
+                    'running_app' => 'Running the App',
+                    'running_tests' => 'Running Tests',
+                    'run_tests_desc' => 'To run the test suite:',
+                    'check_docs' => 'Check the documentation for specific run commands.',
+                    'project_structure' => 'Project Structure',
+                    'contributing' => 'Contributing',
+                    'contributing_desc' => 'Contributions are welcome! Please feel free to submit a Pull Request.',
+                    'license' => 'License',
+                    'yes' => 'Yes',
+                    'no' => 'No',
+                ],
+                'it' => [
+                    'developed_with' => 'Sviluppato con i software e gli strumenti qui sotto.',
+                    'table_of_contents' => 'Indice',
+                    'languages' => 'Linguaggi',
+                    'tech_stack' => 'Stack Tecnologico',
+                    'features' => 'Funzionalità',
+                    'getting_started' => 'Per Iniziare',
+                    'prerequisites' => 'Prerequisiti',
+                    'installation' => 'Installazione',
+                    'clone_repo' => 'Clona il repository:',
+                    'configure_env' => 'Configura le variabili d\'ambiente:',
+                    'install_npm' => 'Installa le dipendenze NPM:',
+                    'install_composer' => 'Installa le dipendenze PHP:',
+                    'install_pip' => 'Installa i requisiti Python:',
+                    'start_docker' => 'Avvia con Docker:',
+                    'running_app' => 'Esecuzione',
+                    'running_tests' => 'Esecuzione dei Test',
+                    'run_tests_desc' => 'Per eseguire la suite di test:',
+                    'check_docs' => 'Controlla la documentazione per i comandi specifici.',
+                    'project_structure' => 'Struttura del Progetto',
+                    'contributing' => 'Contribuisci',
+                    'contributing_desc' => 'I contributi sono benvenuti! Sentiti libero di inviare una Pull Request.',
+                    'license' => 'Licenza',
+                    'yes' => 'Sì',
+                    'no' => 'No',
+                ],
+                'es' => [
+                    'developed_with' => 'Desarrollado con el software y las herramientas a continuación.',
+                    'table_of_contents' => 'Tabla de Contenidos',
+                    'languages' => 'Lenguajes',
+                    'tech_stack' => 'Stack Tecnológico',
+                    'features' => 'Características',
+                    'getting_started' => 'Comenzando',
+                    'prerequisites' => 'Prerrequisitos',
+                    'installation' => 'Instalación',
+                    'clone_repo' => 'Clona el repositorio:',
+                    'configure_env' => 'Configura las variables de entorno:',
+                    'install_npm' => 'Instala las dependencias NPM:',
+                    'install_composer' => 'Instala las dependencias PHP:',
+                    'install_pip' => 'Instala los requisitos de Python:',
+                    'start_docker' => 'Inicia con Docker:',
+                    'running_app' => 'Ejecutando la App',
+                    'running_tests' => 'Ejecutando Pruebas',
+                    'run_tests_desc' => 'Para ejecutar el conjunto de pruebas:',
+                    'check_docs' => 'Consulta la documentación para comandos específicos.',
+                    'project_structure' => 'Estructura del Proyecto',
+                    'contributing' => 'Contribuir',
+                    'contributing_desc' => '¡Las contribuciones son bienvenidas! No dudes en enviar un Pull Request.',
+                    'license' => 'Licencia',
+                    'yes' => 'Sí',
+                    'no' => 'No',
+                ],
+                'fr' => [
+                    'developed_with' => 'Développé avec les logiciels et outils ci-dessous.',
+                    'table_of_contents' => 'Table des Matières',
+                    'languages' => 'Langages',
+                    'tech_stack' => 'Stack Technique',
+                    'features' => 'Fonctionnalités',
+                    'getting_started' => 'Pour Commencer',
+                    'prerequisites' => 'Prérequis',
+                    'installation' => 'Installation',
+                    'clone_repo' => 'Clonez le dépôt :',
+                    'configure_env' => 'Configurez les variables d\'environnement :',
+                    'install_npm' => 'Installez les dépendances NPM :',
+                    'install_composer' => 'Installez les dépendances PHP :',
+                    'install_pip' => 'Installez les exigences Python :',
+                    'start_docker' => 'Démarrez avec Docker :',
+                    'running_app' => 'Exécution de l\'App',
+                    'running_tests' => 'Exécution des Tests',
+                    'run_tests_desc' => 'Pour exécuter la suite de tests :',
+                    'check_docs' => 'Consultez la documentation pour les commandes spécifiques.',
+                    'project_structure' => 'Structure du Projet',
+                    'contributing' => 'Contribuer',
+                    'contributing_desc' => 'Les contributions sont les bienvenues ! N\'hésitez pas à soumettre une Pull Request.',
+                    'license' => 'Licence',
+                    'yes' => 'Oui',
+                    'no' => 'Non',
+                ],
+                'de' => [
+                    'developed_with' => 'Entwickelt mit der folgenden Software und den folgenden Tools.',
+                    'table_of_contents' => 'Inhaltsverzeichnis',
+                    'languages' => 'Sprachen',
+                    'tech_stack' => 'Technologie-Stack',
+                    'features' => 'Funktionen',
+                    'getting_started' => 'Erste Schritte',
+                    'prerequisites' => 'Voraussetzungen',
+                    'installation' => 'Installation',
+                    'clone_repo' => 'Klone das Repository:',
+                    'configure_env' => 'Konfiguriere Umgebungsvariablen:',
+                    'install_npm' => 'Installiere NPM-Abhängigkeiten:',
+                    'install_composer' => 'Installiere PHP-Abhängigkeiten:',
+                    'install_pip' => 'Installiere Python-Anforderungen:',
+                    'start_docker' => 'Starte mit Docker:',
+                    'running_app' => 'App ausführen',
+                    'running_tests' => 'Tests ausführen',
+                    'run_tests_desc' => 'So führst du die Testsuite aus:',
+                    'check_docs' => 'Konsultiere die Dokumentation für spezifische Befehle.',
+                    'project_structure' => 'Projektstruktur',
+                    'contributing' => 'Mitwirken',
+                    'contributing_desc' => 'Beiträge sind willkommen! Reiche gerne einen Pull Request ein.',
+                    'license' => 'Lizenz',
+                    'yes' => 'Ja',
+                    'no' => 'Nein',
+                ],
+                'pt' => [
+                    'developed_with' => 'Desenvolvido com o software e as ferramentas abaixo.',
+                    'table_of_contents' => 'Tabela de Conteúdos',
+                    'languages' => 'Linguagens',
+                    'tech_stack' => 'Stack Tecnológica',
+                    'features' => 'Funcionalidades',
+                    'getting_started' => 'Começando',
+                    'prerequisites' => 'Pré-requisitos',
+                    'installation' => 'Instalação',
+                    'clone_repo' => 'Clone o repositório:',
+                    'configure_env' => 'Configure as variáveis de ambiente:',
+                    'install_npm' => 'Instale as dependências NPM:',
+                    'install_composer' => 'Instale as dependências PHP:',
+                    'install_pip' => 'Instale os requisitos Python:',
+                    'start_docker' => 'Inicie com Docker:',
+                    'running_app' => 'Executando o App',
+                    'running_tests' => 'Executando Testes',
+                    'run_tests_desc' => 'Para executar o conjunto de testes:',
+                    'check_docs' => 'Consulte a documentação para comandos específicos.',
+                    'project_structure' => 'Estrutura do Projeto',
+                    'contributing' => 'Contribuir',
+                    'contributing_desc' => 'Contribuições são bem-vindas! Sinta-se à vontade para enviar um Pull Request.',
+                    'license' => 'Licença',
+                    'yes' => 'Sim',
+                    'no' => 'Não',
+                ],
+                'nl' => [
+                    'developed_with' => 'Ontwikkeld met de onderstaande software en tools.',
+                    'table_of_contents' => 'Inhoudsopgave',
+                    'languages' => 'Talen',
+                    'tech_stack' => 'Technologiestack',
+                    'features' => 'Functies',
+                    'getting_started' => 'Aan de Slag',
+                    'prerequisites' => 'Vereisten',
+                    'installation' => 'Installatie',
+                    'clone_repo' => 'Kloon de repository:',
+                    'configure_env' => 'Configureer omgevingsvariabelen:',
+                    'install_npm' => 'Installeer NPM-afhankelijkheden:',
+                    'install_composer' => 'Installeer PHP-afhankelijkheden:',
+                    'install_pip' => 'Installeer Python-vereisten:',
+                    'start_docker' => 'Start met Docker:',
+                    'running_app' => 'App uitvoeren',
+                    'running_tests' => 'Tests uitvoeren',
+                    'run_tests_desc' => 'Om de testsuite uit te voeren:',
+                    'check_docs' => 'Raadpleeg de documentatie voor specifieke commando\'s.',
+                    'project_structure' => 'Projectstructuur',
+                    'contributing' => 'Bijdragen',
+                    'contributing_desc' => 'Bijdragen zijn welkom! Voel je vrij om een Pull Request in te dienen.',
+                    'license' => 'Licentie',
+                    'yes' => 'Ja',
+                    'no' => 'Nee',
+                ],
+                'ru' => [
+                    'developed_with' => 'Разработано с использованием программного обеспечения и инструментов, указанных ниже.',
+                    'table_of_contents' => 'Содержание',
+                    'languages' => 'Языки',
+                    'tech_stack' => 'Технологический стек',
+                    'features' => 'Возможности',
+                    'getting_started' => 'Начало работы',
+                    'prerequisites' => 'Предварительные требования',
+                    'installation' => 'Установка',
+                    'clone_repo' => 'Клонируйте репозиторий:',
+                    'configure_env' => 'Настройте переменные окружения:',
+                    'install_npm' => 'Установите NPM-зависимости:',
+                    'install_composer' => 'Установите PHP-зависимости:',
+                    'install_pip' => 'Установите Python-требования:',
+                    'start_docker' => 'Запустите с Docker:',
+                    'running_app' => 'Запуск приложения',
+                    'running_tests' => 'Запуск тестов',
+                    'run_tests_desc' => 'Чтобы запустить набор тестов:',
+                    'check_docs' => 'Обратитесь к документации за конкретными командами.',
+                    'project_structure' => 'Структура проекта',
+                    'contributing' => 'Вклад',
+                    'contributing_desc' => 'Вклад приветствуется! Не стесняйтесь отправлять Pull Request.',
+                    'license' => 'Лицензия',
+                    'yes' => 'Да',
+                    'no' => 'Нет',
+                ],
+                'zh' => [
+                    'developed_with' => '使用以下软件和工具开发。',
+                    'table_of_contents' => '目录',
+                    'languages' => '语言',
+                    'tech_stack' => '技术栈',
+                    'features' => '功能',
+                    'getting_started' => '开始使用',
+                    'prerequisites' => '前提条件',
+                    'installation' => '安装',
+                    'clone_repo' => '克隆仓库：',
+                    'configure_env' => '配置环境变量：',
+                    'install_npm' => '安装 NPM 依赖：',
+                    'install_composer' => '安装 PHP 依赖：',
+                    'install_pip' => '安装 Python 依赖：',
+                    'start_docker' => '使用 Docker 启动：',
+                    'running_app' => '运行应用',
+                    'running_tests' => '运行测试',
+                    'run_tests_desc' => '运行测试套件：',
+                    'check_docs' => '查看文档了解具体命令。',
+                    'project_structure' => '项目结构',
+                    'contributing' => '贡献',
+                    'contributing_desc' => '欢迎贡献！请随时提交 Pull Request。',
+                    'license' => '许可证',
+                    'yes' => '是',
+                    'no' => '否',
+                ],
+                'ja' => [
+                    'developed_with' => '以下のソフトウェアとツールを使用して開発されました。',
+                    'table_of_contents' => '目次',
+                    'languages' => '言語',
+                    'tech_stack' => '技術スタック',
+                    'features' => '機能',
+                    'getting_started' => 'はじめに',
+                    'prerequisites' => '前提条件',
+                    'installation' => 'インストール',
+                    'clone_repo' => 'リポジトリをクローン:',
+                    'configure_env' => '環境変数を設定:',
+                    'install_npm' => 'NPM依存関係をインストール:',
+                    'install_composer' => 'PHP依存関係をインストール:',
+                    'install_pip' => 'Python要件をインストール:',
+                    'start_docker' => 'Dockerで起動:',
+                    'running_app' => 'アプリの実行',
+                    'running_tests' => 'テストの実行',
+                    'run_tests_desc' => 'テストスイートを実行するには:',
+                    'check_docs' => '特定のコマンドについてはドキュメントを確認してください。',
+                    'project_structure' => 'プロジェクト構造',
+                    'contributing' => '貢献',
+                    'contributing_desc' => '貢献を歓迎します！お気軽にPull Requestを送信してください。',
+                    'license' => 'ライセンス',
+                    'yes' => 'はい',
+                    'no' => 'いいえ',
+                ],
+                'ko' => [
+                    'developed_with' => '아래의 소프트웨어와 도구를 사용하여 개발되었습니다.',
+                    'table_of_contents' => '목차',
+                    'languages' => '언어',
+                    'tech_stack' => '기술 스택',
+                    'features' => '기능',
+                    'getting_started' => '시작하기',
+                    'prerequisites' => '사전 요구 사항',
+                    'installation' => '설치',
+                    'clone_repo' => '저장소 복제:',
+                    'configure_env' => '환경 변수 구성:',
+                    'install_npm' => 'NPM 종속성 설치:',
+                    'install_composer' => 'PHP 종속성 설치:',
+                    'install_pip' => 'Python 요구 사항 설치:',
+                    'start_docker' => 'Docker로 시작:',
+                    'running_app' => '앱 실행',
+                    'running_tests' => '테스트 실행',
+                    'run_tests_desc' => '테스트 스위트를 실행하려면:',
+                    'check_docs' => '특정 명령은 문서를 확인하세요.',
+                    'project_structure' => '프로젝트 구조',
+                    'contributing' => '기여',
+                    'contributing_desc' => '기여를 환영합니다! Pull Request를 자유롭게 제출해 주세요.',
+                    'license' => '라이선스',
+                    'yes' => '예',
+                    'no' => '아니요',
+                ],
+                'ar' => [
+                    'developed_with' => 'تم التطوير باستخدام البرامج والأدوات أدناه.',
+                    'table_of_contents' => 'جدول المحتويات',
+                    'languages' => 'اللغات',
+                    'tech_stack' => 'الرصة التقنية',
+                    'features' => 'الميزات',
+                    'getting_started' => 'البدء',
+                    'prerequisites' => 'المتطلبات الأساسية',
+                    'installation' => 'التثبيت',
+                    'clone_repo' => 'استنساخ المستودع:',
+                    'configure_env' => 'تكوين متغيرات البيئة:',
+                    'install_npm' => 'تثبيت تبعيات NPM:',
+                    'install_composer' => 'تثبيت تبعيات PHP:',
+                    'install_pip' => 'تثبيت متطلبات Python:',
+                    'start_docker' => 'البدء مع Docker:',
+                    'running_app' => 'تشغيل التطبيق',
+                    'running_tests' => 'تشغيل الاختبارات',
+                    'run_tests_desc' => 'لتشغيل مجموعة الاختبارات:',
+                    'check_docs' => 'راجع الوثائق للحصول على أوامر محددة.',
+                    'project_structure' => 'هيكل المشروع',
+                    'contributing' => 'المساهمة',
+                    'contributing_desc' => 'المساهمات مرحب بها! لا تتردد في إرسال Pull Request.',
+                    'license' => 'الترخيص',
+                    'yes' => 'نعم',
+                    'no' => 'لا',
+                ],
+                'tr' => [
+                    'developed_with' => 'Aşağıdaki yazılımlar ve araçlarla geliştirilmiştir.',
+                    'table_of_contents' => 'İçindekiler',
+                    'languages' => 'Diller',
+                    'tech_stack' => 'Teknoloji Yığını',
+                    'features' => 'Özellikler',
+                    'getting_started' => 'Başlarken',
+                    'prerequisites' => 'Ön Gereksinimler',
+                    'installation' => 'Kurulum',
+                    'clone_repo' => 'Depoyu klonlayın:',
+                    'configure_env' => 'Ortam değişkenlerini yapılandırın:',
+                    'install_npm' => 'NPM bağımlılıklarını yükleyin:',
+                    'install_composer' => 'PHP bağımlılıklarını yükleyin:',
+                    'install_pip' => 'Python gereksinimlerini yükleyin:',
+                    'start_docker' => 'Docker ile başlatın:',
+                    'running_app' => 'Uygulamayı Çalıştırma',
+                    'running_tests' => 'Testleri Çalıştırma',
+                    'run_tests_desc' => 'Test paketini çalıştırmak için:',
+                    'check_docs' => 'Belirli komutlar için belgelere bakın.',
+                    'project_structure' => 'Proje Yapısı',
+                    'contributing' => 'Katkıda Bulunma',
+                    'contributing_desc' => 'Katkılar memnuniyetle karşılanır! Pull Request göndermekten çekinmeyin.',
+                    'license' => 'Lisans',
+                    'yes' => 'Evet',
+                    'no' => 'Hayır',
+                ],
+            ];
+            return $texts[$language][$key] ?? $texts['en'][$key] ?? $key;
+        };
 
         $md = "<div align=\"center\">\n";
         if ($customImage) {
@@ -931,7 +1300,7 @@ PROMPT;
         }
 
         $md .= "<p align=\"center\">\n";
-        $md .= "  *Developed with the software and tools below.*\n";
+        $md .= "  *" . $t('developed_with') . "*\n";
         $md .= "</p>\n";
 
         $md .= "<p align=\"center\">\n";
@@ -944,16 +1313,16 @@ PROMPT;
 
         $md .= "---\n\n";
 
-        $md .= "## Table of Contents\n\n";
-        $md .= "- [Languages](#languages)\n";
-        $md .= "- [Tech Stack](#tech-stack)\n";
-        $md .= "- [Features](#features)\n";
-        $md .= "- [Getting Started](#getting-started)\n";
-        $md .= "- [Project Structure](#project-structure)\n";
-        $md .= "- [Contributing](#contributing)\n";
-        $md .= "- [License](#license)\n\n";
+        $md .= "## " . $t('table_of_contents') . "\n\n";
+        $md .= "- [" . $t('languages') . "](#languages)\n";
+        $md .= "- [" . $t('tech_stack') . "](#tech-stack)\n";
+        $md .= "- [" . $t('features') . "](#features)\n";
+        $md .= "- [" . $t('getting_started') . "](#getting-started)\n";
+        $md .= "- [" . $t('project_structure') . "](#project-structure)\n";
+        $md .= "- [" . $t('contributing') . "](#contributing)\n";
+        $md .= "- [" . $t('license') . "](#license)\n\n";
 
-        $md .= "## Languages\n\n";
+        $md .= "## " . $t('languages') . "\n\n";
 
             $totalBytes = array_sum($data['languages']);
             if ($totalBytes > 0) {
@@ -970,30 +1339,30 @@ PROMPT;
             $allTech = array_unique($allTech);
 
             if (!empty($allTech)) {
-                $md .= "## Tech Stack\n\n";
+                $md .= "## " . $t('tech_stack') . "\n\n";
                 foreach ($allTech as $tech) {
                      $md .= $this->getTechBadge($tech) . " ";
                 }
                 $md .= "\n\n";
             }
 
-        $md .= "## Features\n\n";
+        $md .= "## " . $t('features') . "\n\n";
         $features = $this->generateFeatures($data);
         foreach ($features as $feature) {
             $md .= "- " . $feature . "\n";
         }
         $md .= "\n";
 
-        $md .= "## Getting Started\n\n";
-        $md .= "### Prerequisites\n\n";
+        $md .= "## " . $t('getting_started') . "\n\n";
+        $md .= "### " . $t('prerequisites') . "\n\n";
         if (isset($data['languages']['PHP'])) $md .= "- PHP 8.0+\n";
         if (isset($data['languages']['JavaScript'])) $md .= "- Node.js\n";
         if (isset($data['languages']['Python'])) $md .= "- Python 3.8+\n";
         if (isset($data['has_docker']) && $data['has_docker']) $md .= "- Docker\n";
         $md .= "\n";
 
-        $md .= "### Installation\n\n";
-        $md .= "1. Clone the repository:\n";
+        $md .= "### " . $t('installation') . "\n\n";
+        $md .= "1. " . $t('clone_repo') . "\n";
         $md .= "```bash\n";
         $md .= "git clone " . $url . "\n";
         $md .= "cd " . $repo . "\n";
@@ -1001,22 +1370,22 @@ PROMPT;
 
         $step = 2;
         if (!empty($data['has_env'])) {
-            $md .= $step++ . ". Configure environment variables:\n```bash\ncp .env.example .env\n```\n\n";
+            $md .= $step++ . ". " . $t('configure_env') . "\n```bash\ncp .env.example .env\n```\n\n";
         }
         if (isset($data['frameworks']['Node.js'])) {
-            $md .= $step++ . ". Install NPM dependencies:\n```bash\nnpm install\n```\n\n";
+            $md .= $step++ . ". " . $t('install_npm') . "\n```bash\nnpm install\n```\n\n";
         }
         if (isset($data['frameworks']['Composer'])) {
-            $md .= $step++ . ". Install PHP dependencies:\n```bash\ncomposer install\n```\n\n";
+            $md .= $step++ . ". " . $t('install_composer') . "\n```bash\ncomposer install\n```\n\n";
         }
         if (isset($data['frameworks']['Pip'])) {
-            $md .= $step++ . ". Install Python requirements:\n```bash\npip install -r requirements.txt\n```\n\n";
+            $md .= $step++ . ". " . $t('install_pip') . "\n```bash\npip install -r requirements.txt\n```\n\n";
         }
         if (isset($data['has_docker']) && $data['has_docker']) {
-            $md .= $step++ . ". Start with Docker:\n```bash\ndocker-compose up -d\n```\n\n";
+            $md .= $step++ . ". " . $t('start_docker') . "\n```bash\ndocker-compose up -d\n```\n\n";
         }
 
-        $md .= "### Running the App\n\n";
+        $md .= "### " . $t('running_app') . "\n\n";
         if (isset($data['frameworks']['Node.js'])) {
              $md .= "```bash\nnpm start\n# or\nnpm run dev\n```\n\n";
         } elseif (isset($data['frameworks']['Laravel'])) {
@@ -1024,12 +1393,12 @@ PROMPT;
         } elseif (isset($data['frameworks']['Django'])) {
              $md .= "```bash\npython manage.py runserver\n```\n\n";
         } else {
-             $md .= "Check the documentation for specific run commands.\n\n";
+             $md .= $t('check_docs') . "\n\n";
         }
 
         if (isset($data['has_tests']) && $data['has_tests']) {
-            $md .= "## Running Tests\n\n";
-            $md .= "To run the test suite:\n\n";
+            $md .= "## " . $t('running_tests') . "\n\n";
+            $md .= $t('run_tests_desc') . "\n\n";
             $md .= "```bash\n";
             if (isset($data['frameworks']['Jest'])) {
                 $md .= "npm test\n";
@@ -1043,21 +1412,28 @@ PROMPT;
             $md .= "```\n\n";
         }
 
-        $md .= "## Project Structure\n\n";
+        $md .= "## " . $t('project_structure') . "\n\n";
         $md .= "```text\n";
         $md .= $this->generateTree($data['structure']);
         $md .= "```\n\n";
 
-        $md .= "## Contributing\n\n";
-        $md .= "Contributions are welcome! Please feel free to submit a Pull Request.\n\n";
+        $md .= "## " . $t('contributing') . "\n\n";
+        $md .= $t('contributing_desc') . "\n\n";
 
-        $md .= "## License\n\n";
+        $md .= "## " . $t('license') . "\n\n";
         $md .= $data['license'] . "\n";
 
         return $md;
     }
 
     public function simpleMarkdownToHtml($markdown) {
+        $badges = [];
+        $markdown = preg_replace_callback('/\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/', function($matches) use (&$badges) {
+            $id = '###BADGE' . count($badges) . '###';
+            $badges[$id] = '<a href="' . htmlspecialchars($matches[3]) . '" target="_blank"><img src="' . htmlspecialchars($matches[2]) . '" alt="' . htmlspecialchars($matches[1]) . '" style="max-width:100%;"></a>';
+            return $id;
+        }, $markdown);
+
         $markdown = str_replace(['<div align="center">', '</div>'], ['###DIVSTART###', '###DIVEND###'], $markdown);
         $markdown = str_replace(['<p align="center">', '</p>'], ['###PSTART###', '###PEND###'], $markdown);
 
@@ -1099,7 +1475,12 @@ PROMPT;
             $html = str_replace($id, $tag, $html);
         }
         foreach ($otherHtmlTags as $id => $tag) {
-            $html = str_replace($id, $tag, $html);
+            $allowed = ['<br>', '<br/>', '<hr>', '<hr/>', '<details>', '</details>', '<summary>', '</summary>', '<kbd>', '</kbd>', '<sub>', '</sub>', '<sup>', '</sup>', '<b>', '</b>', '<i>', '</i>', '<em>', '</em>', '<strong>', '</strong>'];
+            if (in_array(strtolower($tag), $allowed)) {
+                $html = str_replace($id, $tag, $html);
+            } else {
+                $html = str_replace($id, htmlspecialchars($tag), $html);
+            }
         }
 
         $html = preg_replace('/!\[([^\]]*)\]\(([^)]+)\)/', '<img src="$2" alt="$1" style="max-width:100%;">', $html);
@@ -1139,6 +1520,10 @@ PROMPT;
 
         $html = preg_replace('/(<br><br>\s*)+<pre/', '<pre', $html);
         $html = preg_replace('/<\/pre>(\s*<br><br>)+/', '</pre>', $html);
+
+        foreach ($badges as $id => $badgeHtml) {
+            $html = str_replace($id, $badgeHtml, $html);
+        }
 
         return $html;
     }

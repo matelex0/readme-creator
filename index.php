@@ -1,9 +1,14 @@
 <?php
 
+require_once 'functions.php';
 require_once 'ReadmeGenerator.php';
 
 $config = require 'config.php';
 $generator = new ReadmeGenerator($config);
+
+register_shutdown_function(function() use ($generator) {
+    $generator->cleanup();
+});
 
 $error = null;
 $aiError = null;
@@ -11,6 +16,8 @@ $readmeContent = null;
 $previewHtml = null;
 $repoName = '';
 $ownerName = '';
+
+$captchaQuestion = generateCaptcha();
 
 if (isset($_POST['download']) && isset($_POST['markdown_content'])) {
     $filename = 'README.md';
@@ -49,6 +56,10 @@ if (count($parts) >= 2 && $parts[0] !== 'index.php') {
 }
 
 if (($ownerName && $repoName) && !$error && !$autoMode) {
+    if (!verifyCaptcha($config)) {
+        $error = "Please complete the reCAPTCHA verification.";
+        $captchaQuestion = generateCaptcha();
+    } else {
     try {
         $ownerName = $generator->sanitize($ownerName);
         $repoName = $generator->sanitize($repoName);
@@ -58,6 +69,7 @@ if (($ownerName && $repoName) && !$error && !$autoMode) {
         if (!$repoUrl) {
             $error = "Repository not found on GitHub ($ownerName/$repoName).";
         } else {
+            $generator->checkRepoSize($ownerName, $repoName);
             $tempPath = $generator->cloneRepo($repoUrl);
             $analysis = $generator->analyze($tempPath);
 
@@ -69,18 +81,19 @@ if (($ownerName && $repoName) && !$error && !$autoMode) {
             }
 
             $useAI = isset($_POST['use_ai']) && $_POST['use_ai'] === '1';
+            $language = $_POST['language'] ?? 'en';
 
             if ($useAI) {
                 try {
                     set_time_limit(0);
                     $sourceContent = $generator->collectSourceContent($tempPath);
-                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent);
+                    $readmeContent = $generator->generateMarkdownAI($ownerName, $repoName, $analysis, $repoUrl, $customImage, $sourceContent, $language);
                 } catch (Exception $e) {
                     $aiError = $e->getMessage();
-                    $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
+                    $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage, $language);
                 }
             } else {
-                $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage);
+                $readmeContent = $generator->generateMarkdown($ownerName, $repoName, $analysis, $repoUrl, $customImage, $language);
             }
 
             $previewHtml = $generator->simpleMarkdownToHtml($readmeContent);
@@ -91,6 +104,14 @@ if (($ownerName && $repoName) && !$error && !$autoMode) {
         $error = "Error: " . $e->getMessage();
         $generator->cleanup();
     }
+    }
+}
+
+$defaultRepoUrl = '';
+if ($autoMode && $ownerName && $repoName) {
+    $defaultRepoUrl = "https://github.com/$ownerName/$repoName";
+} elseif (isset($_POST['repo_url'])) {
+    $defaultRepoUrl = $_POST['repo_url'];
 }
 
 ?>
@@ -100,58 +121,101 @@ if (($ownerName && $repoName) && !$error && !$autoMode) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>README Creator <?php echo $repoName ? "- $repoName" : ""; ?></title>
-    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/style.css?v=<?php echo filemtime(__DIR__ . '/style.css'); ?>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <?php if ($config['captcha']['enabled']): ?>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    <?php endif; ?>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            var form = document.querySelector('form');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    var useAI = document.querySelector('[name="use_ai"]')?.checked;
-                    document.querySelector('.loading-text').textContent = useAI
-                        ? 'Generating with AI... This may take a moment.'
-                        : 'Analyzing Repository...';
-                    document.querySelector('.loading-overlay').classList.remove('hidden');
-                });
-            }
-
-            <?php if ($autoMode && $ownerName && $repoName): ?>
-            generateAsync('<?php echo addslashes($ownerName); ?>', '<?php echo addslashes($repoName); ?>');
-            <?php endif; ?>
-        });
-
-        function generateAsync(owner, repo) {
-            var overlay = document.querySelector('.loading-overlay');
-            var results = document.getElementById('async-results');
-            overlay.classList.remove('hidden');
-            document.querySelector('.loading-text').textContent = 'Generating with AI... This may take a moment.';
-
-            fetch('/api.php', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'owner=' + encodeURIComponent(owner) + '&repo=' + encodeURIComponent(repo)
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                overlay.classList.add('hidden');
-                if (results) {
-                    if (data.error) {
-                        results.innerHTML = '<div class="card" style="margin-top:20px;border-color:var(--mac-red);color:var(--mac-red);text-align:center;">' + escapeHtml(data.error) + '</div>';
-                    } else {
-                        results.innerHTML = data.html;
-                        results.classList.remove('hidden');
-                    }
-                }
-            })
-            .catch(function(err) {
-                overlay.classList.add('hidden');
-                if (results) {
-                    results.innerHTML = '<div class="card" style="margin-top:20px;border-color:var(--mac-red);color:var(--mac-red);text-align:center;">Error: ' + escapeHtml(err.message) + '</div>';
-                }
-            });
+        <?php if ($config['captcha']['enabled']): ?>
+        function onCaptchaSolved() {
+            var err = document.getElementById('captchaError');
+            if (err) err.style.display = 'none';
+            var box = document.querySelector('.g-recaptcha');
+            if (box && box.style) box.style.border = 'none';
         }
+
+        function onModalCaptchaSolved() {
+            document.getElementById('modalGenerateBtn').disabled = false;
+            document.getElementById('modalCaptchaError').style.display = 'none';
+        }
+        <?php endif; ?>
+
+        function submitForm() {
+            var form = document.querySelector('form');
+            if (!form) return;
+            var useAI = document.querySelector('[name="use_ai"]')?.checked;
+            document.querySelector('.loading-text').textContent = useAI
+                ? 'Generating with AI... This may take a moment.'
+                : 'Analyzing Repository...';
+            document.querySelector('.loading-overlay').classList.remove('hidden');
+
+            <?php if ($autoMode && $config['captcha']['enabled']): ?>
+            var inp = document.querySelector('input[name="g-recaptcha-response"]');
+            if (!inp) {
+                inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'g-recaptcha-response';
+                form.appendChild(inp);
+            }
+            inp.value = grecaptcha.getResponse();
+            <?php endif; ?>
+
+            form.submit();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            <?php if ($autoMode): ?>
+            <?php if ($config['captcha']['enabled']): ?>
+            var modal = document.getElementById('captchaModal');
+            if (modal) modal.classList.remove('hidden');
+            document.getElementById('modalGenerateBtn').addEventListener('click', function() {
+                if (!grecaptcha || !grecaptcha.getResponse()) {
+                    document.getElementById('modalCaptchaError').style.display = 'block';
+                    return;
+                }
+                modal.classList.add('hidden');
+                submitForm();
+            });
+            <?php else: ?>
+            submitForm();
+            <?php endif; ?>
+            <?php endif; ?>
+
+            var form = document.querySelector('form');
+            if (!form) return;
+
+            form.addEventListener('submit', function(e) {
+                <?php if ($config['captcha']['enabled'] && !$autoMode): ?>
+                if (!grecaptcha || !grecaptcha.getResponse()) {
+                    e.preventDefault();
+                    var err = document.getElementById('captchaError');
+                    if (!err) {
+                        err = document.createElement('div');
+                        err.id = 'captchaError';
+                        err.style.cssText = 'color:var(--mac-red);font-size:0.8rem;margin-bottom:12px;';
+                        var box = document.querySelector('.g-recaptcha');
+                        if (box && box.parentNode) box.parentNode.insertBefore(err, box.nextSibling);
+                    }
+                    err.textContent = 'Please complete the reCAPTCHA.';
+                    var box = document.querySelector('.g-recaptcha');
+                    if (box) {
+                        box.style.border = '1px solid var(--mac-red)';
+                        box.style.borderRadius = '3px';
+                        box.style.padding = '2px';
+                        box.style.animation = 'none';
+                        void box.offsetHeight;
+                        box.style.animation = 'shake 0.4s ease';
+                    }
+                    return;
+                }
+                <?php endif; ?>
+
+                submitForm();
+            });
+        });
 
         function copyMarkdown() {
             var textarea = document.querySelector('.code-editor');
@@ -183,7 +247,7 @@ if (($ownerName && $repoName) && !$error && !$autoMode) {
     </script>
 </head>
 <body>
-    <div class="loading-overlay <?php echo ($autoMode || $error) ? '' : 'hidden'; ?>">
+    <div class="loading-overlay <?php echo $error ? '' : 'hidden'; ?>">
         <div class="loading-spinner"></div>
         <div class="loading-text"><?php echo $autoMode ? 'Generating with AI...' : ($error ? htmlspecialchars($error) : 'Analyzing Repository...'); ?></div>
     </div>
@@ -205,32 +269,108 @@ if (($ownerName && $repoName) && !$error && !$autoMode) {
             </header>
 
             <main>
+                <section class="quick-info">
+                    <div class="info-card">
+                        <div class="info-icon">⚡</div>
+                        <div class="info-body">
+                            <strong>Quick mode</strong> — Just append <code>/owner/repo</code> to the URL:<br>
+                            <code class="example-url">readme.matelex.it/matelex0/xenoai</code>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="input-wrapper">
                     <form method="POST" action="/">
                         <div class="input-group-vertical">
-                            <div class="input-wrapper">
-                                <input type="text" name="repo_url" placeholder="https://github.com/username/repository" required value="<?php echo isset($_POST['repo_url']) ? htmlspecialchars($_POST['repo_url']) : ''; ?>">
+                            <div class="field-group">
+                                <label class="field-label">Repository URL</label>
+                                <div class="input-wrapper">
+                                    <input type="text" name="repo_url" placeholder="https://github.com/username/repository" required value="<?php echo htmlspecialchars($defaultRepoUrl); ?>">
+                                </div>
                             </div>
-                            <div class="input-wrapper">
-                                <input type="text" name="custom_image" placeholder="Custom Header Image URL (Optional)" value="<?php echo isset($_POST['custom_image']) ? htmlspecialchars($_POST['custom_image']) : ''; ?>">
-                            </div>
-                            <div class="select-wrapper">
-                                <select name="license">
-                                    <option value="">-- Detect License Automatically --</option>
-                                    <option value="MIT License">MIT License</option>
-                                    <option value="Apache License 2.0">Apache License 2.0</option>
-                                    <option value="GNU General Public License v3.0">GNU GPL v3.0</option>
-                                    <option value="BSD 3-Clause License">BSD 3-Clause</option>
-                                </select>
-                            </div>
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="use_ai" value="1" <?php echo isset($_POST['use_ai']) ? 'checked' : ''; ?>>
-                                <span class="checkbox-text">Generate with AI <span class="badge-ai">AI</span></span>
-                            </label>
+
+                            <details class="advanced-toggle">
+                                <summary>Advanced Options</summary>
+                                <div class="advanced-body">
+
+                                <div class="field-group">
+                                    <label class="field-label">Custom Header Image</label>
+                                    <div class="input-wrapper">
+                                        <input type="text" name="custom_image" placeholder="https://example.com/your-image.png" value="<?php echo isset($_POST['custom_image']) ? htmlspecialchars($_POST['custom_image']) : ''; ?>">
+                                    </div>
+                                    <p class="field-hint">Overrides the auto-generated Socialify header image. Provide a direct URL to any image (PNG, JPG, GIF). The image will be displayed at the top of your README, centered and 500px wide.</p>
+                                    <div class="image-example">
+                                        <span class="example-label">Default auto-generated:</span>
+                                        <img src="https://socialify.git.ci/alex1dev0/readme-creator/image?description=1&font=Inter&language=1&name=1&owner=1&pattern=Transparent&theme=Auto" alt="Socialify example" class="example-img">
+                                        <span class="example-label">With custom image:</span>
+                                        <div class="example-custom-preview">Your image here → <code class="example-url">https://example.com/your-image.png</code></div>
+                                    </div>
+                                </div>
+
+                                <div class="field-group">
+                                    <label class="field-label">License Override</label>
+                                    <div class="select-wrapper">
+                                        <select name="license">
+                                            <option value="">-- Detect Automatically --</option>
+                                            <option value="MIT License">MIT License</option>
+                                            <option value="Apache License 2.0">Apache License 2.0</option>
+                                            <option value="GNU General Public License v3.0">GNU GPL v3.0</option>
+                                            <option value="BSD 3-Clause License">BSD 3-Clause</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="field-group">
+                                    <label class="field-label">Language</label>
+                                    <div class="select-wrapper">
+                                        <select name="language">
+                                            <option value="en" <?php echo (!isset($_POST['language']) || $_POST['language'] === 'en') ? 'selected' : ''; ?>>English (auto)</option>
+                                            <option value="it" <?php echo (isset($_POST['language']) && $_POST['language'] === 'it') ? 'selected' : ''; ?>>Italiano</option>
+                                            <option value="es" <?php echo (isset($_POST['language']) && $_POST['language'] === 'es') ? 'selected' : ''; ?>>Español</option>
+                                            <option value="fr" <?php echo (isset($_POST['language']) && $_POST['language'] === 'fr') ? 'selected' : ''; ?>>Français</option>
+                                            <option value="de" <?php echo (isset($_POST['language']) && $_POST['language'] === 'de') ? 'selected' : ''; ?>>Deutsch</option>
+                                            <option value="pt" <?php echo (isset($_POST['language']) && $_POST['language'] === 'pt') ? 'selected' : ''; ?>>Português</option>
+                                            <option value="nl" <?php echo (isset($_POST['language']) && $_POST['language'] === 'nl') ? 'selected' : ''; ?>>Nederlands</option>
+                                            <option value="ru" <?php echo (isset($_POST['language']) && $_POST['language'] === 'ru') ? 'selected' : ''; ?>>Русский</option>
+                                            <option value="zh" <?php echo (isset($_POST['language']) && $_POST['language'] === 'zh') ? 'selected' : ''; ?>>中文</option>
+                                            <option value="ja" <?php echo (isset($_POST['language']) && $_POST['language'] === 'ja') ? 'selected' : ''; ?>>日本語</option>
+                                            <option value="ko" <?php echo (isset($_POST['language']) && $_POST['language'] === 'ko') ? 'selected' : ''; ?>>한국어</option>
+                                            <option value="ar" <?php echo (isset($_POST['language']) && $_POST['language'] === 'ar') ? 'selected' : ''; ?>>العربية</option>
+                                            <option value="tr" <?php echo (isset($_POST['language']) && $_POST['language'] === 'tr') ? 'selected' : ''; ?>>Türkçe</option>
+                                        </select>
+                                    </div>
+                                    <p class="field-hint">Leave as English (auto) for AI to generate in English by default.</p>
+                                </div>
+
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="use_ai" value="1" <?php echo (isset($_POST['use_ai']) || $autoMode) ? 'checked' : ''; ?>>
+                                    <span class="checkbox-text">Generate with AI <span class="badge-ai">AI</span></span>
+                                </label>
+                                <p class="field-hint" style="margin-top: 6px;">AI generation produces richer, more accurate READMEs using repo source code analysis. Uncheck for a fast template-based version.</p>
+
+                                </div>
+                            </details>
+
+                            <?php if ($config['captcha']['enabled'] && !$autoMode): ?>
+                            <div class="g-recaptcha" data-sitekey="<?php echo htmlspecialchars($config['captcha']['site_key']); ?>" data-callback="onCaptchaSolved" data-expired-callback="onCaptchaSolved" style="margin-bottom: 16px;"></div>
+                            <?php endif; ?>
+
                             <button type="submit" class="btn primary btn-block">Generate README</button>
                         </div>
                     </form>
                 </section>
+
+                <?php if ($autoMode && $config['captcha']['enabled']): ?>
+                <div class="modal-overlay hidden" id="captchaModal">
+                    <div class="modal-box">
+                        <h3>Verify you're human</h3>
+                        <p style="margin: 8px 0 16px; color: var(--text-secondary); font-size: 0.85rem;">Complete the captcha to generate the README for <strong><?php echo htmlspecialchars($ownerName . '/' . $repoName); ?></strong></p>
+                        <div class="g-recaptcha" data-sitekey="<?php echo htmlspecialchars($config['captcha']['site_key']); ?>" data-callback="onModalCaptchaSolved"></div>
+                        <div id="modalCaptchaError" style="color:var(--mac-red);font-size:0.8rem;margin-top:8px;display:none;">Please complete the reCAPTCHA.</div>
+                        <button class="btn primary" id="modalGenerateBtn" disabled style="margin-top: 16px; width: 100%;">Generate README</button>
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <?php if ($error && !$autoMode): ?>
                     <div class="card" style="margin-top: 20px; border-color: var(--mac-red); color: var(--mac-red); text-align: center;">
